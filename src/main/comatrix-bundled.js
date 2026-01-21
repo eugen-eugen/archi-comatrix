@@ -958,7 +958,9 @@ function runComatrix() {
 
   // Define output path
   const outputDir = model.path ? path.dirname(model.path) : __DIR__;
+  console.log("outputdir=", outputDir);
   const outputPath = path.join(outputDir, "comatrix.xlsm");
+  console.log("outputPath=", outputPath);
 
   console.log(`Output file: ${outputPath}\n`);
 
