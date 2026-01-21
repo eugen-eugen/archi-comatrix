@@ -6,13 +6,16 @@
 const XLSX = require("xlsx-js-style");
 
 /**
- * Creates a matrix Excel file from triggering relationships
- * @param {Array} relationships - Array of triggering relationship objects
- * @param {String} outputPath - Path to save the Excel file
- * @param {Object} baselineSets - Optional sets of baseline elements {aElements: Set, bElements: Set}
+ * Builds a connectivity matrix from an Archi model
+ * @param {Object} currentModel - The Archi model to analyze
+ * @returns {Object} Matrix data structure with aElements, bElementsMap, sortedAElements, sortedBElements, and relationships
  */
-function createElementsMatrix(relationships, outputPath, baselineSets) {
+function buildComatrix(currentModel) {
   console.log("Step 1: Analyzing relationships and building matrix...");
+
+  // Extract relationships from the model
+  const relationships = extractElements(currentModel);
+  console.log(`Found ${relationships.length} triggering relationships`);
 
   // Collect all unique A elements (targets) and B elements (sources)
   // Map structure: A element name -> {domain, schnittstellenMap}
@@ -85,6 +88,52 @@ function createElementsMatrix(relationships, outputPath, baselineSets) {
     // Same domain, sort by element name
     return a.localeCompare(b);
   });
+
+  console.log("Matrix data structure built successfully.");
+
+  return {
+    aElements,
+    bElementsMap,
+    sortedAElements,
+    sortedBElements,
+    relationships,
+  };
+}
+
+/**
+ * Outputs a connectivity matrix to Excel with optional baseline comparison
+ * @param {Object} comatrix - Matrix data structure from buildComatrix()
+ * @param {String} outputPath - Path to save the Excel file
+ * @param {Object} baselineModel - Optional baseline model for comparison
+ */
+function output2Excel(comatrix, outputPath, baselineModel) {
+  const { aElements, bElementsMap, sortedAElements, sortedBElements } =
+    comatrix;
+
+  // Build baseline sets if baseline model is provided
+  let baselineSets = null;
+  if (baselineModel) {
+    console.log("Extracting baseline relationships for comparison...");
+    const baselineElements = extractElements(baselineModel);
+    console.log(
+      `Found ${baselineElements.length} triggering relationships in baseline\n`,
+    );
+
+    baselineSets = {
+      aElements: new Set(),
+      bElements: new Set(),
+    };
+
+    baselineElements.forEach((rel) => {
+      baselineSets.aElements.add(rel.target.name);
+      baselineSets.bElements.add(rel.source.name);
+    });
+
+    console.log(
+      `Baseline contains ${baselineSets.aElements.size} A-elements and ${baselineSets.bElements.size} B-elements`,
+    );
+    console.log("New elements will be highlighted with green fill.\n");
+  }
 
   console.log("Step 3: Building matrix data...");
 
@@ -556,13 +605,6 @@ function runComatrix() {
   const elements = extractElements(model);
   console.log(`Found ${elements.length} triggering relationships`);
 
-  if (elements.length === 0) {
-    console.log(
-      "⚠ No NST_* triggering relationships found in the selected model.",
-    );
-    return;
-  }
-
   // Print domain information for verification
   console.log("\n=== Domain Information ===");
   const uniqueElements = new Map();
@@ -576,7 +618,7 @@ function runComatrix() {
     }
   });
 
-  console.log(`Total unique elements: ${uniqueElements.length}\n`);
+  console.log(`Total unique elements: ${uniqueElements.size}\n`);
 
   // Define output path
   const outputDir = model.path
@@ -590,37 +632,24 @@ function runComatrix() {
   console.log("Generating Excel file...");
 
   try {
-    let baselineSets = null;
+    // Build matrix from current model
+    const comatrix = buildComatrix(model);
 
-    if (compareMode) {
-      console.log("Extracting baseline relationships for comparison...");
-      const baselineElements = extractElements(baselineModel);
+    if (comatrix.relationships.length === 0) {
       console.log(
-        `Found ${baselineElements.length} triggering relationships in baseline\n`,
+        "⚠ No NST_* triggering relationships found in the selected model.",
       );
-
-      // Build sets of A and B element names from baseline
-      baselineSets = {
-        aElements: new Set(),
-        bElements: new Set(),
-      };
-
-      baselineElements.forEach((rel) => {
-        baselineSets.aElements.add(rel.target.name);
-        baselineSets.bElements.add(rel.source.name);
-      });
-
-      console.log(
-        `Baseline contains ${baselineSets.aElements.size} A-elements and ${baselineSets.bElements.size} B-elements`,
-      );
-      console.log("New elements will be highlighted with green fill.\n");
+      return;
     }
 
-    createElementsMatrix(elements, outputPath, baselineSets);
+    // Output to Excel with optional baseline comparison
+    output2Excel(comatrix, outputPath, baselineModel);
 
     console.log("\n=== Export Complete ===");
     console.log(`Matrix file saved to: ${outputPath}`);
-    console.log(`Total triggering relationships processed: ${elements.length}`);
+    console.log(
+      `Total triggering relationships processed: ${comatrix.relationships.length}`,
+    );
 
     // Open the file location in file browser
     try {
@@ -640,7 +669,8 @@ function runComatrix() {
 
 // Export functions for bundling
 module.exports = {
-  createElementsMatrix,
+  buildComatrix,
+  output2Excel,
   extractElements,
   runComatrix,
 };
