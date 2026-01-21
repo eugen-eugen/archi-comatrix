@@ -212,15 +212,20 @@ function merge(comatrixBase, comatrixCurrent) {
  * @param {Object} comatrix - Matrix data structure from buildComatrix() or merge()
  * @param {String} outputPath - Path to save the Excel file
  * @param {Object} comatrixBase - Optional baseline matrix for comparison (from buildComatrix)
+ * @param {Object} comatrixCurrent - Optional current matrix for comparison (from buildComatrix)
  */
-function output2Excel(comatrix, outputPath, comatrixBase) {
+function output2Excel(comatrix, outputPath, comatrixBase, comatrixCurrent) {
   const { aElements, bElementsMap, sortedAElements, sortedBElements } =
     comatrix;
 
-  // Build baseline sets if baseline matrix is provided
+  // Build baseline and current sets if provided for comparison
   let baselineSets = null;
-  if (comatrixBase) {
-    console.log("Building baseline sets for comparison...");
+  let currentSets = null;
+  let changedAElements = new Set(); // A-elements with changed connections
+  let changedBElements = new Set(); // B-elements with changed connections
+  
+  if (comatrixBase && comatrixCurrent) {
+    console.log("Building baseline and current sets for comparison...");
 
     baselineSets = {
       aElements: new Set(),
@@ -235,10 +240,94 @@ function output2Excel(comatrix, outputPath, comatrixBase) {
       baselineSets.bElements.add(name);
     });
 
+    currentSets = {
+      aElements: new Set(),
+      bElements: new Set(),
+    };
+
+    comatrixCurrent.aElements.forEach((value, name) => {
+      currentSets.aElements.add(name);
+    });
+
+    comatrixCurrent.bElementsMap.forEach((domain, name) => {
+      currentSets.bElements.add(name);
+    });
+
+    // Detect changed connections for elements existing in both models
+    console.log("Analyzing connection changes...");
+    
+    // Check A-elements for changed connections
+    comatrixBase.aElements.forEach((baseData, aName) => {
+      if (currentSets.aElements.has(aName)) {
+        const currentData = comatrixCurrent.aElements.get(aName);
+        
+        // Compare Schnittstellen and their B-elements
+        let hasChanges = false;
+        
+        // Check each Schnittstelle in baseline
+        baseData.schnittstellenMap.forEach((baseBSet, schnittstelle) => {
+          if (currentData.schnittstellenMap.has(schnittstelle)) {
+            const currentBSet = currentData.schnittstellenMap.get(schnittstelle);
+            
+            // Check if B-elements differ
+            baseBSet.forEach(bName => {
+              if (!currentBSet.has(bName)) {
+                hasChanges = true;
+                changedBElements.add(bName);
+              }
+            });
+            
+            currentBSet.forEach(bName => {
+              if (!baseBSet.has(bName)) {
+                hasChanges = true;
+                changedBElements.add(bName);
+              }
+            });
+          } else {
+            // Schnittstelle exists in baseline but not in current
+            hasChanges = true;
+            baseBSet.forEach(bName => changedBElements.add(bName));
+          }
+        });
+        
+        // Check for Schnittstellen only in current
+        currentData.schnittstellenMap.forEach((currentBSet, schnittstelle) => {
+          if (!baseData.schnittstellenMap.has(schnittstelle)) {
+            hasChanges = true;
+            currentBSet.forEach(bName => changedBElements.add(bName));
+          }
+        });
+        
+        if (hasChanges) {
+          changedAElements.add(aName);
+        }
+      }
+    });
+    
+    // Check for A-elements only in current with connections
+    comatrixCurrent.aElements.forEach((currentData, aName) => {
+      if (!baselineSets.aElements.has(aName)) {
+        // Mark all connected B-elements as changed
+        currentData.schnittstellenMap.forEach((bSet) => {
+          bSet.forEach(bName => {
+            if (baselineSets.bElements.has(bName)) {
+              changedBElements.add(bName);
+            }
+          });
+        });
+      }
+    });
+
     console.log(
       `Baseline contains ${baselineSets.aElements.size} A-elements and ${baselineSets.bElements.size} B-elements`,
     );
-    console.log("New elements will be highlighted with green fill.\n");
+    console.log(
+      `Current contains ${currentSets.aElements.size} A-elements and ${currentSets.bElements.size} B-elements`,
+    );
+    console.log(`Elements with changed connections: ${changedAElements.size} A-elements, ${changedBElements.size} B-elements`);
+    console.log("New elements will be highlighted with green fill.");
+    console.log("Removed elements will be highlighted with red fill.");
+    console.log("Elements with changed connections will be highlighted with orange fill.\n");
   }
 
   console.log("Step 3: Building matrix data...");
@@ -371,7 +460,7 @@ function output2Excel(comatrix, outputPath, comatrixBase) {
 
   // Specific styles for A1, B1, C1
   const styleA1 = {
-    font: { name: "Calibri", sz: 11 },
+    font: { name: "Calibri", sz: 11, color: { rgb: "FFFFFF" } },
     alignment: { horizontal: "center" },
     border: borderStyle,
     fill: { fgColor: { rgb: "9BBB59" } }, // RGB 155/187/89
@@ -420,15 +509,41 @@ function output2Excel(comatrix, outputPath, comatrixBase) {
   };
   // Style for new A-elements (not in baseline) - green fill like A1
   const dataStyleNewA = {
-    font: { name: "Calibri", sz: 11 },
+    font: { name: "Calibri", sz: 11, color: { rgb: "FFFFFF" } },
     border: borderStyle,
     fill: { fgColor: { rgb: "9BBB59" } }, // RGB 155/187/89
   };
 
   const dataStyleNewABold = {
-    font: { name: "Calibri", sz: 11, bold: true },
+    font: { name: "Calibri", sz: 11, bold: true, color: { rgb: "FFFFFF" } },
     border: borderStyle,
     fill: { fgColor: { rgb: "9BBB59" } }, // RGB 155/187/89
+  };
+
+  // Style for removed A-elements (in baseline but not in current) - red fill like C1
+  const dataStyleRemovedA = {
+    font: { name: "Calibri", sz: 11 },
+    border: borderStyle,
+    fill: { fgColor: { rgb: "C0504D" } }, // RGB 192/80/77
+  };
+
+  const dataStyleRemovedABold = {
+    font: { name: "Calibri", sz: 11, bold: true },
+    border: borderStyle,
+    fill: { fgColor: { rgb: "C0504D" } }, // RGB 192/80/77
+  };
+
+  // Style for changed A-elements (in both, with connection changes) - orange fill like B1
+  const dataStyleChangedA = {
+    font: { name: "Calibri", sz: 11 },
+    border: borderStyle,
+    fill: { fgColor: { rgb: "FFC000" } }, // RGB 255/192/0
+  };
+
+  const dataStyleChangedABold = {
+    font: { name: "Calibri", sz: 11, bold: true },
+    border: borderStyle,
+    fill: { fgColor: { rgb: "FFC000" } }, // RGB 255/192/0
   };
   // Style for data cells columns E onwards - Calibri 11 with borders, RGB 184/204/228, centered
   const dataStyleRightColumns = {
@@ -448,10 +563,18 @@ function output2Excel(comatrix, outputPath, comatrixBase) {
 
   // Style for "x" cells in new A or B elements - bold, centered, green fill
   const dataStyleXNew = {
-    font: { name: "Calibri", sz: 11, bold: true },
+    font: { name: "Calibri", sz: 11, bold: true, color: { rgb: "FFFFFF" } },
     alignment: { horizontal: "center" },
     border: borderStyle,
     fill: { fgColor: { rgb: "9BBB59" } }, // RGB 155/187/89 (green)
+  };
+
+  // Style for "x" cells in removed A or B elements - bold, centered, red fill
+  const dataStyleXRemoved = {
+    font: { name: "Calibri", sz: 11, bold: true, color: { rgb: "FFFFFF" } },
+    alignment: { horizontal: "center" },
+    border: borderStyle,
+    fill: { fgColor: { rgb: "C0504D" } }, // RGB 192/80/77 (red)
   };
 
   // Apply base style to all cells first
@@ -466,30 +589,69 @@ function output2Excel(comatrix, outputPath, comatrixBase) {
         const isIntern = data[row][3] === "intern"; // Check column D (intern/extern)
         const cellValue = data[row][col];
         const aElementName = data[row][1]; // Column B has A-element name (Anwendungssystem)
+        const schnittstelle = data[row][2]; // Column C has Schnittstelle
         const isNewA =
-          baselineSets && !baselineSets.aElements.has(aElementName);
+          baselineSets && currentSets && !baselineSets.aElements.has(aElementName);
+        const isRemovedA =
+          baselineSets && currentSets && !currentSets.aElements.has(aElementName);
+        const isChangedA = changedAElements.has(aElementName);
 
         if (col < 4) {
-          // Columns A-D: green if new A-element, bold if intern
+          // Columns A-D: color based on element status
           if (isNewA) {
             worksheet[cellRef].s = isIntern
               ? { ...dataStyleNewABold }
               : { ...dataStyleNewA };
+          } else if (isRemovedA) {
+            worksheet[cellRef].s = isIntern
+              ? { ...dataStyleRemovedABold }
+              : { ...dataStyleRemovedA };
+          } else if (isChangedA) {
+            worksheet[cellRef].s = isIntern
+              ? { ...dataStyleChangedABold }
+              : { ...dataStyleChangedA };
           } else {
             worksheet[cellRef].s = isIntern
               ? { ...dataStyleLeftColumnsBold }
               : { ...dataStyleLeftColumns };
           }
         } else {
-          // Columns E+: check if B-element is new
+          // Columns E+: check if B-element is new, removed, or changed
           const bElementName = headerRow[col];
           const isNewB =
-            baselineSets && !baselineSets.bElements.has(bElementName);
+            baselineSets && currentSets && !baselineSets.bElements.has(bElementName);
+          const isRemovedB =
+            baselineSets && currentSets && !currentSets.bElements.has(bElementName);
+          const isChangedB = changedBElements.has(bElementName);
 
           if (cellValue === "x") {
-            // "x" cell: green if A or B element is new, otherwise normal blue
-            worksheet[cellRef].s =
-              isNewA || isNewB ? { ...dataStyleXNew } : { ...dataStyleX };
+            // Check if this specific connection is new or removed
+            let connectionStatus = "existing";
+            
+            if (baselineSets && currentSets) {
+              const inBaseline = comatrixBase.aElements.has(aElementName) &&
+                comatrixBase.aElements.get(aElementName).schnittstellenMap.has(schnittstelle) &&
+                comatrixBase.aElements.get(aElementName).schnittstellenMap.get(schnittstelle).has(bElementName);
+              
+              const inCurrent = comatrixCurrent.aElements.has(aElementName) &&
+                comatrixCurrent.aElements.get(aElementName).schnittstellenMap.has(schnittstelle) &&
+                comatrixCurrent.aElements.get(aElementName).schnittstellenMap.get(schnittstelle).has(bElementName);
+              
+              if (inCurrent && !inBaseline) {
+                connectionStatus = "new";
+              } else if (inBaseline && !inCurrent) {
+                connectionStatus = "removed";
+              }
+            }
+            
+            // "x" cell: color based on connection status or element status
+            if (connectionStatus === "new" || isNewA || isNewB) {
+              worksheet[cellRef].s = { ...dataStyleXNew };
+            } else if (connectionStatus === "removed" || isRemovedA || isRemovedB) {
+              worksheet[cellRef].s = { ...dataStyleXRemoved };
+            } else {
+              worksheet[cellRef].s = { ...dataStyleX };
+            }
           } else {
             // Empty cell: always use normal blue styling
             worksheet[cellRef].s = { ...dataStyleRightColumns };
@@ -525,26 +687,60 @@ function output2Excel(comatrix, outputPath, comatrixBase) {
         worksheet[cellRef1].s = headerStyleStandard;
       }
     } else {
-      // Columns 4+ (B elements): check if new
+      // Columns 4+ (B elements): check if new, removed, or changed
       const bElementName = headerRow[col];
-      const isNewB = baselineSets && !baselineSets.bElements.has(bElementName);
+      const isNewB = baselineSets && currentSets && !baselineSets.bElements.has(bElementName);
+      const isRemovedB = baselineSets && currentSets && !currentSets.bElements.has(bElementName);
+      const isChangedB = changedBElements.has(bElementName);
 
       if (isNewB) {
         // New B-element: green fill in rows 0 and 1
         const styleNewBDomain = {
-          font: { name: "Calibri", sz: 11 },
+          font: { name: "Calibri", sz: 11, color: { rgb: "FFFFFF" } },
           alignment: { horizontal: "center" },
           border: borderStyle,
           fill: { fgColor: { rgb: "9BBB59" } }, // Green like A1
         };
         const styleNewBHeader = {
-          font: { name: "Calibri", sz: 11 },
+          font: { name: "Calibri", sz: 11, color: { rgb: "FFFFFF" } },
           alignment: { horizontal: "center", textRotation: 90, wrapText: true },
           border: borderStyle,
           fill: { fgColor: { rgb: "9BBB59" } }, // Green like A1
         };
         if (worksheet[cellRef0]) worksheet[cellRef0].s = styleNewBDomain;
         if (worksheet[cellRef1]) worksheet[cellRef1].s = styleNewBHeader;
+      } else if (isRemovedB) {
+        // Removed B-element: red fill in rows 0 and 1
+        const styleRemovedBDomain = {
+          font: { name: "Calibri", sz: 11 },
+          alignment: { horizontal: "center" },
+          border: borderStyle,
+          fill: { fgColor: { rgb: "C0504D" } }, // Red like C1
+        };
+        const styleRemovedBHeader = {
+          font: { name: "Calibri", sz: 11 },
+          alignment: { horizontal: "center", textRotation: 90, wrapText: true },
+          border: borderStyle,
+          fill: { fgColor: { rgb: "C0504D" } }, // Red like C1
+        };
+        if (worksheet[cellRef0]) worksheet[cellRef0].s = styleRemovedBDomain;
+        if (worksheet[cellRef1]) worksheet[cellRef1].s = styleRemovedBHeader;
+      } else if (isChangedB) {
+        // Changed B-element: orange fill in rows 0 and 1
+        const styleChangedBDomain = {
+          font: { name: "Calibri", sz: 11 },
+          alignment: { horizontal: "center" },
+          border: borderStyle,
+          fill: { fgColor: { rgb: "FFC000" } }, // Orange like B1
+        };
+        const styleChangedBHeader = {
+          font: { name: "Calibri", sz: 11 },
+          alignment: { horizontal: "center", textRotation: 90, wrapText: true },
+          border: borderStyle,
+          fill: { fgColor: { rgb: "FFC000" } }, // Orange like B1
+        };
+        if (worksheet[cellRef0]) worksheet[cellRef0].s = styleChangedBDomain;
+        if (worksheet[cellRef1]) worksheet[cellRef1].s = styleChangedBHeader;
       } else {
         // Existing B-element: normal styling
         if (worksheet[cellRef1]) {
@@ -740,6 +936,7 @@ function runComatrix() {
   try {
     let comatrix;
     let comatrixBase = null;
+    let comatrixCurrent = null;
 
     if (compareMode) {
       // Build matrices for both models
@@ -748,7 +945,7 @@ function runComatrix() {
       console.log(`Baseline: ${comatrixBase.relationships.length} relationships\n`);
 
       console.log("Building matrix for current model...");
-      const comatrixCurrent = buildComatrix(model);
+      comatrixCurrent = buildComatrix(model);
       console.log(`Current: ${comatrixCurrent.relationships.length} relationships\n`);
 
       if (comatrixCurrent.relationships.length === 0) {
@@ -774,7 +971,7 @@ function runComatrix() {
     }
 
     // Output to Excel with optional baseline comparison
-    output2Excel(comatrix, outputPath, comatrixBase);
+    output2Excel(comatrix, outputPath, comatrixBase, comatrixCurrent);
 
     console.log("\n=== Export Complete ===");
     console.log(`Matrix file saved to: ${outputPath}`);
