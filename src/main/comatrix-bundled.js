@@ -101,32 +101,138 @@ function buildComatrix(currentModel) {
 }
 
 /**
- * Outputs a connectivity matrix to Excel with optional baseline comparison
- * @param {Object} comatrix - Matrix data structure from buildComatrix()
- * @param {String} outputPath - Path to save the Excel file
- * @param {Object} baselineModel - Optional baseline model for comparison
+ * Merges two connectivity matrices (baseline and current)
+ * @param {Object} comatrixBase - Matrix data structure from buildComatrix(baselineModel)
+ * @param {Object} comatrixCurrent - Matrix data structure from buildComatrix(currentModel)
+ * @returns {Object} Merged matrix data structure containing all elements from both models
  */
-function output2Excel(comatrix, outputPath, baselineModel) {
+function merge(comatrixBase, comatrixCurrent) {
+  console.log("Merging baseline and current matrices...");
+
+  // Merge A elements
+  const aElements = new Map();
+  
+  // Copy baseline A elements
+  comatrixBase.aElements.forEach((value, key) => {
+    aElements.set(key, {
+      domain: value.domain,
+      schnittstellenMap: new Map(value.schnittstellenMap),
+    });
+  });
+
+  // Merge current A elements
+  comatrixCurrent.aElements.forEach((value, key) => {
+    if (aElements.has(key)) {
+      // Element exists in both - merge Schnittstellen
+      const existingData = aElements.get(key);
+      value.schnittstellenMap.forEach((bSet, schnittstelle) => {
+        if (!existingData.schnittstellenMap.has(schnittstelle)) {
+          existingData.schnittstellenMap.set(schnittstelle, new Set(bSet));
+        } else {
+          // Merge B elements for this Schnittstelle
+          bSet.forEach((b) =>
+            existingData.schnittstellenMap.get(schnittstelle).add(b),
+          );
+        }
+      });
+    } else {
+      // New element from current
+      aElements.set(key, {
+        domain: value.domain,
+        schnittstellenMap: new Map(value.schnittstellenMap),
+      });
+    }
+  });
+
+  // Merge B elements
+  const bElementsMap = new Map();
+  
+  // Copy baseline B elements
+  comatrixBase.bElementsMap.forEach((domain, name) => {
+    bElementsMap.set(name, domain);
+  });
+
+  // Add current B elements
+  comatrixCurrent.bElementsMap.forEach((domain, name) => {
+    if (!bElementsMap.has(name)) {
+      bElementsMap.set(name, domain);
+    }
+  });
+
+  // Sort merged elements
+  const sortedAElements = Array.from(aElements.keys()).sort((a, b) => {
+    const domainA = aElements.get(a).domain;
+    const domainB = aElements.get(b).domain;
+
+    if (domainA === "" && domainB !== "") return 1;
+    if (domainA !== "" && domainB === "") return -1;
+
+    if (domainA !== domainB) {
+      return domainA.localeCompare(domainB);
+    }
+
+    return a.localeCompare(b);
+  });
+
+  const sortedBElements = Array.from(bElementsMap.keys()).sort((a, b) => {
+    const domainA = bElementsMap.get(a);
+    const domainB = bElementsMap.get(b);
+
+    if (domainA === "" && domainB !== "") return 1;
+    if (domainA !== "" && domainB === "") return -1;
+
+    if (domainA !== domainB) {
+      return domainA.localeCompare(domainB);
+    }
+
+    return a.localeCompare(b);
+  });
+
+  // Merge relationships
+  const relationships = [
+    ...comatrixBase.relationships,
+    ...comatrixCurrent.relationships,
+  ];
+
+  console.log(
+    `Merged matrix: ${aElements.size} A-elements, ${bElementsMap.size} B-elements, ${relationships.length} relationships`,
+  );
+
+  return {
+    aElements,
+    bElementsMap,
+    sortedAElements,
+    sortedBElements,
+    relationships,
+  };
+}
+
+/**
+ * Outputs a connectivity matrix to Excel with optional baseline comparison
+ * @param {Object} comatrix - Matrix data structure from buildComatrix() or merge()
+ * @param {String} outputPath - Path to save the Excel file
+ * @param {Object} comatrixBase - Optional baseline matrix for comparison (from buildComatrix)
+ */
+function output2Excel(comatrix, outputPath, comatrixBase) {
   const { aElements, bElementsMap, sortedAElements, sortedBElements } =
     comatrix;
 
-  // Build baseline sets if baseline model is provided
+  // Build baseline sets if baseline matrix is provided
   let baselineSets = null;
-  if (baselineModel) {
-    console.log("Extracting baseline relationships for comparison...");
-    const baselineElements = extractElements(baselineModel);
-    console.log(
-      `Found ${baselineElements.length} triggering relationships in baseline\n`,
-    );
+  if (comatrixBase) {
+    console.log("Building baseline sets for comparison...");
 
     baselineSets = {
       aElements: new Set(),
       bElements: new Set(),
     };
 
-    baselineElements.forEach((rel) => {
-      baselineSets.aElements.add(rel.target.name);
-      baselineSets.bElements.add(rel.source.name);
+    comatrixBase.aElements.forEach((value, name) => {
+      baselineSets.aElements.add(name);
+    });
+
+    comatrixBase.bElementsMap.forEach((domain, name) => {
+      baselineSets.bElements.add(name);
     });
 
     console.log(
@@ -632,18 +738,43 @@ function runComatrix() {
   console.log("Generating Excel file...");
 
   try {
-    // Build matrix from current model
-    const comatrix = buildComatrix(model);
+    let comatrix;
+    let comatrixBase = null;
 
-    if (comatrix.relationships.length === 0) {
-      console.log(
-        "⚠ No NST_* triggering relationships found in the selected model.",
-      );
-      return;
+    if (compareMode) {
+      // Build matrices for both models
+      console.log("Building matrix for baseline model...");
+      comatrixBase = buildComatrix(baselineModel);
+      console.log(`Baseline: ${comatrixBase.relationships.length} relationships\n`);
+
+      console.log("Building matrix for current model...");
+      const comatrixCurrent = buildComatrix(model);
+      console.log(`Current: ${comatrixCurrent.relationships.length} relationships\n`);
+
+      if (comatrixCurrent.relationships.length === 0) {
+        console.log(
+          "⚠ No NST_* triggering relationships found in the current model.",
+        );
+        return;
+      }
+
+      // Merge baseline and current
+      comatrix = merge(comatrixBase, comatrixCurrent);
+      console.log("");
+    } else {
+      // Single model mode - just build from current model
+      comatrix = buildComatrix(model);
+
+      if (comatrix.relationships.length === 0) {
+        console.log(
+          "⚠ No NST_* triggering relationships found in the selected model.",
+        );
+        return;
+      }
     }
 
     // Output to Excel with optional baseline comparison
-    output2Excel(comatrix, outputPath, baselineModel);
+    output2Excel(comatrix, outputPath, comatrixBase);
 
     console.log("\n=== Export Complete ===");
     console.log(`Matrix file saved to: ${outputPath}`);
@@ -670,6 +801,7 @@ function runComatrix() {
 // Export functions for bundling
 module.exports = {
   buildComatrix,
+  merge,
   output2Excel,
   extractElements,
   runComatrix,
