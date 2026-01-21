@@ -4,6 +4,7 @@
  */
 
 const XLSX = require("xlsx-js-style");
+const path = require("path-browserify");
 
 /**
  * Builds a connectivity matrix from an Archi model
@@ -111,7 +112,7 @@ function merge(comatrixBase, comatrixCurrent) {
 
   // Merge A elements
   const aElements = new Map();
-  
+
   // Copy baseline A elements
   comatrixBase.aElements.forEach((value, key) => {
     aElements.set(key, {
@@ -146,7 +147,7 @@ function merge(comatrixBase, comatrixCurrent) {
 
   // Merge B elements
   const bElementsMap = new Map();
-  
+
   // Copy baseline B elements
   comatrixBase.bElementsMap.forEach((domain, name) => {
     bElementsMap.set(name, domain);
@@ -223,7 +224,7 @@ function output2Excel(comatrix, outputPath, comatrixBase, comatrixCurrent) {
   let currentSets = null;
   let changedAElements = new Set(); // A-elements with changed connections
   let changedBElements = new Set(); // B-elements with changed connections
-  
+
   if (comatrixBase && comatrixCurrent) {
     console.log("Building baseline and current sets for comparison...");
 
@@ -255,29 +256,30 @@ function output2Excel(comatrix, outputPath, comatrixBase, comatrixCurrent) {
 
     // Detect changed connections for elements existing in both models
     console.log("Analyzing connection changes...");
-    
+
     // Check A-elements for changed connections
     comatrixBase.aElements.forEach((baseData, aName) => {
       if (currentSets.aElements.has(aName)) {
         const currentData = comatrixCurrent.aElements.get(aName);
-        
+
         // Compare Schnittstellen and their B-elements
         let hasChanges = false;
-        
+
         // Check each Schnittstelle in baseline
         baseData.schnittstellenMap.forEach((baseBSet, schnittstelle) => {
           if (currentData.schnittstellenMap.has(schnittstelle)) {
-            const currentBSet = currentData.schnittstellenMap.get(schnittstelle);
-            
+            const currentBSet =
+              currentData.schnittstellenMap.get(schnittstelle);
+
             // Check if B-elements differ
-            baseBSet.forEach(bName => {
+            baseBSet.forEach((bName) => {
               if (!currentBSet.has(bName)) {
                 hasChanges = true;
                 changedBElements.add(bName);
               }
             });
-            
-            currentBSet.forEach(bName => {
+
+            currentBSet.forEach((bName) => {
               if (!baseBSet.has(bName)) {
                 hasChanges = true;
                 changedBElements.add(bName);
@@ -286,30 +288,30 @@ function output2Excel(comatrix, outputPath, comatrixBase, comatrixCurrent) {
           } else {
             // Schnittstelle exists in baseline but not in current
             hasChanges = true;
-            baseBSet.forEach(bName => changedBElements.add(bName));
+            baseBSet.forEach((bName) => changedBElements.add(bName));
           }
         });
-        
+
         // Check for Schnittstellen only in current
         currentData.schnittstellenMap.forEach((currentBSet, schnittstelle) => {
           if (!baseData.schnittstellenMap.has(schnittstelle)) {
             hasChanges = true;
-            currentBSet.forEach(bName => changedBElements.add(bName));
+            currentBSet.forEach((bName) => changedBElements.add(bName));
           }
         });
-        
+
         if (hasChanges) {
           changedAElements.add(aName);
         }
       }
     });
-    
+
     // Check for A-elements only in current with connections
     comatrixCurrent.aElements.forEach((currentData, aName) => {
       if (!baselineSets.aElements.has(aName)) {
         // Mark all connected B-elements as changed
         currentData.schnittstellenMap.forEach((bSet) => {
-          bSet.forEach(bName => {
+          bSet.forEach((bName) => {
             if (baselineSets.bElements.has(bName)) {
               changedBElements.add(bName);
             }
@@ -324,10 +326,14 @@ function output2Excel(comatrix, outputPath, comatrixBase, comatrixCurrent) {
     console.log(
       `Current contains ${currentSets.aElements.size} A-elements and ${currentSets.bElements.size} B-elements`,
     );
-    console.log(`Elements with changed connections: ${changedAElements.size} A-elements, ${changedBElements.size} B-elements`);
+    console.log(
+      `Elements with changed connections: ${changedAElements.size} A-elements, ${changedBElements.size} B-elements`,
+    );
     console.log("New elements will be highlighted with green fill.");
     console.log("Removed elements will be highlighted with red fill.");
-    console.log("Elements with changed connections will be highlighted with orange fill.\n");
+    console.log(
+      "Elements with changed connections will be highlighted with orange fill.\n",
+    );
   }
 
   console.log("Step 3: Building matrix data...");
@@ -591,9 +597,13 @@ function output2Excel(comatrix, outputPath, comatrixBase, comatrixCurrent) {
         const aElementName = data[row][1]; // Column B has A-element name (Anwendungssystem)
         const schnittstelle = data[row][2]; // Column C has Schnittstelle
         const isNewA =
-          baselineSets && currentSets && !baselineSets.aElements.has(aElementName);
+          baselineSets &&
+          currentSets &&
+          !baselineSets.aElements.has(aElementName);
         const isRemovedA =
-          baselineSets && currentSets && !currentSets.aElements.has(aElementName);
+          baselineSets &&
+          currentSets &&
+          !currentSets.aElements.has(aElementName);
         const isChangedA = changedAElements.has(aElementName);
 
         if (col < 4) {
@@ -619,35 +629,55 @@ function output2Excel(comatrix, outputPath, comatrixBase, comatrixCurrent) {
           // Columns E+: check if B-element is new, removed, or changed
           const bElementName = headerRow[col];
           const isNewB =
-            baselineSets && currentSets && !baselineSets.bElements.has(bElementName);
+            baselineSets &&
+            currentSets &&
+            !baselineSets.bElements.has(bElementName);
           const isRemovedB =
-            baselineSets && currentSets && !currentSets.bElements.has(bElementName);
+            baselineSets &&
+            currentSets &&
+            !currentSets.bElements.has(bElementName);
           const isChangedB = changedBElements.has(bElementName);
 
           if (cellValue === "x") {
             // Check if this specific connection is new or removed
             let connectionStatus = "existing";
-            
+
             if (baselineSets && currentSets) {
-              const inBaseline = comatrixBase.aElements.has(aElementName) &&
-                comatrixBase.aElements.get(aElementName).schnittstellenMap.has(schnittstelle) &&
-                comatrixBase.aElements.get(aElementName).schnittstellenMap.get(schnittstelle).has(bElementName);
-              
-              const inCurrent = comatrixCurrent.aElements.has(aElementName) &&
-                comatrixCurrent.aElements.get(aElementName).schnittstellenMap.has(schnittstelle) &&
-                comatrixCurrent.aElements.get(aElementName).schnittstellenMap.get(schnittstelle).has(bElementName);
-              
+              const inBaseline =
+                comatrixBase.aElements.has(aElementName) &&
+                comatrixBase.aElements
+                  .get(aElementName)
+                  .schnittstellenMap.has(schnittstelle) &&
+                comatrixBase.aElements
+                  .get(aElementName)
+                  .schnittstellenMap.get(schnittstelle)
+                  .has(bElementName);
+
+              const inCurrent =
+                comatrixCurrent.aElements.has(aElementName) &&
+                comatrixCurrent.aElements
+                  .get(aElementName)
+                  .schnittstellenMap.has(schnittstelle) &&
+                comatrixCurrent.aElements
+                  .get(aElementName)
+                  .schnittstellenMap.get(schnittstelle)
+                  .has(bElementName);
+
               if (inCurrent && !inBaseline) {
                 connectionStatus = "new";
               } else if (inBaseline && !inCurrent) {
                 connectionStatus = "removed";
               }
             }
-            
+
             // "x" cell: color based on connection status or element status
             if (connectionStatus === "new" || isNewA || isNewB) {
               worksheet[cellRef].s = { ...dataStyleXNew };
-            } else if (connectionStatus === "removed" || isRemovedA || isRemovedB) {
+            } else if (
+              connectionStatus === "removed" ||
+              isRemovedA ||
+              isRemovedB
+            ) {
               worksheet[cellRef].s = { ...dataStyleXRemoved };
             } else {
               worksheet[cellRef].s = { ...dataStyleX };
@@ -689,8 +719,12 @@ function output2Excel(comatrix, outputPath, comatrixBase, comatrixCurrent) {
     } else {
       // Columns 4+ (B elements): check if new, removed, or changed
       const bElementName = headerRow[col];
-      const isNewB = baselineSets && currentSets && !baselineSets.bElements.has(bElementName);
-      const isRemovedB = baselineSets && currentSets && !currentSets.bElements.has(bElementName);
+      const isNewB =
+        baselineSets &&
+        currentSets &&
+        !baselineSets.bElements.has(bElementName);
+      const isRemovedB =
+        baselineSets && currentSets && !currentSets.bElements.has(bElementName);
       const isChangedB = changedBElements.has(bElementName);
 
       if (isNewB) {
@@ -923,10 +957,8 @@ function runComatrix() {
   console.log(`Total unique elements: ${uniqueElements.size}\n`);
 
   // Define output path
-  const outputDir = model.path
-    ? model.path.substring(0, model.path.lastIndexOf("/"))
-    : __DIR__;
-  const outputPath = outputDir + "/comatrix.xlsm";
+  const outputDir = model.path ? path.dirname(model.path) : __DIR__;
+  const outputPath = path.join(outputDir, "comatrix.xlsm");
 
   console.log(`Output file: ${outputPath}\n`);
 
@@ -942,11 +974,15 @@ function runComatrix() {
       // Build matrices for both models
       console.log("Building matrix for baseline model...");
       comatrixBase = buildComatrix(baselineModel);
-      console.log(`Baseline: ${comatrixBase.relationships.length} relationships\n`);
+      console.log(
+        `Baseline: ${comatrixBase.relationships.length} relationships\n`,
+      );
 
       console.log("Building matrix for current model...");
       comatrixCurrent = buildComatrix(model);
-      console.log(`Current: ${comatrixCurrent.relationships.length} relationships\n`);
+      console.log(
+        `Current: ${comatrixCurrent.relationships.length} relationships\n`,
+      );
 
       if (comatrixCurrent.relationships.length === 0) {
         console.log(
