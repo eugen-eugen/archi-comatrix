@@ -1,0 +1,52 @@
+name: Build and Release
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Build bundled script
+        run: npm run build
+      
+      - name: Configure Git
+        run: |
+          git config --global user.name "GitHub Action"
+          git config --global user.email "action@github.com"
+      
+      - name: Create or checkout release branch
+        run: |
+          git fetch origin release:release 2>/dev/null || git checkout -b release
+          git checkout release || git checkout -b release
+      
+      - name: Copy bundled file to release branch
+        run: |
+          git checkout main -- dist/comatrix-bundled.ajs
+          git add dist/comatrix-bundled.ajs
+      
+      - name: Commit and push to release branch
+        run: |
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "Release: Update bundled script from ${{ github.sha }}"
+            git push origin release
+          fi
