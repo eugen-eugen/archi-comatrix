@@ -224,6 +224,9 @@ function output2Excel(comatrix, outputPath, comatrixBase, comatrixCurrent) {
   let currentSets = null;
   let changedAElements = new Set(); // A-elements with changed connections
   let changedBElements = new Set(); // B-elements with changed connections
+  let baselineRowCombinations = new Set(); // Set of "AElement|Schnittstelle" combinations in baseline
+  let currentRowCombinations = new Set(); // Set of "AElement|Schnittstelle" combinations in current
+  let changedRowCombinations = new Set(); // Row combinations with connection changes
 
   if (comatrixBase && comatrixCurrent) {
     console.log("Building baseline and current sets for comparison...");
@@ -233,6 +236,7 @@ function output2Excel(comatrix, outputPath, comatrixBase, comatrixCurrent) {
       bElements: new Set(),
     };
 
+    // Add only element names (not domains) for comparison
     comatrixBase.aElements.forEach((value, name) => {
       baselineSets.aElements.add(name);
     });
@@ -246,6 +250,7 @@ function output2Excel(comatrix, outputPath, comatrixBase, comatrixCurrent) {
       bElements: new Set(),
     };
 
+    // Add only element names (not domains) for comparison
     comatrixCurrent.aElements.forEach((value, name) => {
       currentSets.aElements.add(name);
     });
@@ -254,69 +259,113 @@ function output2Excel(comatrix, outputPath, comatrixBase, comatrixCurrent) {
       currentSets.bElements.add(name);
     });
 
-    // Detect changed connections for elements existing in both models
+    // Build row combinations (A-element + Schnittstelle)
+    comatrixBase.aElements.forEach((data, aName) => {
+      data.schnittstellenMap.forEach((bSet, schnittstelle) => {
+        baselineRowCombinations.add(`${aName}|${schnittstelle}`);
+      });
+    });
+
+    comatrixCurrent.aElements.forEach((data, aName) => {
+      data.schnittstellenMap.forEach((bSet, schnittstelle) => {
+        currentRowCombinations.add(`${aName}|${schnittstelle}`);
+      });
+    });
+
+    // Detect changed row combinations (A-element + Schnittstelle with different connections)
     console.log("Analyzing connection changes...");
 
-    // Check A-elements for changed connections
-    comatrixBase.aElements.forEach((baseData, aName) => {
-      if (currentSets.aElements.has(aName)) {
-        const currentData = comatrixCurrent.aElements.get(aName);
+    // Check combinations that exist in both baseline and current
+    currentRowCombinations.forEach((combo) => {
+      if (baselineRowCombinations.has(combo)) {
+        const [aName, schnittstelle] = combo.split("|");
 
-        // Compare Schnittstellen and their B-elements
+        const baseBSet = comatrixBase.aElements
+          .get(aName)
+          .schnittstellenMap.get(schnittstelle);
+        const currentBSet = comatrixCurrent.aElements
+          .get(aName)
+          .schnittstellenMap.get(schnittstelle);
+
+        // Check if the B-elements (connections) are different
         let hasChanges = false;
 
-        // Check each Schnittstelle in baseline
-        baseData.schnittstellenMap.forEach((baseBSet, schnittstelle) => {
-          if (currentData.schnittstellenMap.has(schnittstelle)) {
-            const currentBSet =
-              currentData.schnittstellenMap.get(schnittstelle);
-
-            // Check if B-elements differ
-            baseBSet.forEach((bName) => {
-              if (!currentBSet.has(bName)) {
-                hasChanges = true;
-                changedBElements.add(bName);
-              }
-            });
-
-            currentBSet.forEach((bName) => {
-              if (!baseBSet.has(bName)) {
-                hasChanges = true;
-                changedBElements.add(bName);
-              }
-            });
-          } else {
-            // Schnittstelle exists in baseline but not in current
+        baseBSet.forEach((bName) => {
+          if (!currentBSet.has(bName)) {
             hasChanges = true;
-            baseBSet.forEach((bName) => changedBElements.add(bName));
           }
         });
 
-        // Check for Schnittstellen only in current
-        currentData.schnittstellenMap.forEach((currentBSet, schnittstelle) => {
-          if (!baseData.schnittstellenMap.has(schnittstelle)) {
+        currentBSet.forEach((bName) => {
+          if (!baseBSet.has(bName)) {
             hasChanges = true;
-            currentBSet.forEach((bName) => changedBElements.add(bName));
           }
         });
 
         if (hasChanges) {
-          changedAElements.add(aName);
+          changedRowCombinations.add(combo);
         }
       }
     });
 
-    // Check for A-elements only in current with connections
-    comatrixCurrent.aElements.forEach((currentData, aName) => {
-      if (!baselineSets.aElements.has(aName)) {
-        // Mark all connected B-elements as changed
-        currentData.schnittstellenMap.forEach((bSet) => {
-          bSet.forEach((bName) => {
-            if (baselineSets.bElements.has(bName)) {
-              changedBElements.add(bName);
+    // Check each B-element column for changes
+    sortedBElements.forEach((bName) => {
+      const inBaseline = baselineSets.bElements.has(bName);
+      const inCurrent = currentSets.bElements.has(bName);
+
+      if (inBaseline && inCurrent) {
+        // B-element exists in both - check if any connections differ in this column
+        let hasChanges = false;
+
+        // Check all A-element + Schnittstelle combinations for this B-element
+        comatrixBase.aElements.forEach((baseData, aName) => {
+          baseData.schnittstellenMap.forEach((baseBSet, schnittstelle) => {
+            const inBaselineRow = baseBSet.has(bName);
+
+            // Check if this combination exists in current
+            let inCurrentRow = false;
+            if (comatrixCurrent.aElements.has(aName)) {
+              const currentData = comatrixCurrent.aElements.get(aName);
+              if (currentData.schnittstellenMap.has(schnittstelle)) {
+                inCurrentRow = currentData.schnittstellenMap
+                  .get(schnittstelle)
+                  .has(bName);
+              }
+            }
+
+            if (inBaselineRow !== inCurrentRow) {
+              hasChanges = true;
             }
           });
         });
+
+        // Also check combinations only in current
+        comatrixCurrent.aElements.forEach((currentData, aName) => {
+          currentData.schnittstellenMap.forEach(
+            (currentBSet, schnittstelle) => {
+              if (currentBSet.has(bName)) {
+                // Check if this combination existed in baseline
+                let inBaselineRow = false;
+                if (comatrixBase.aElements.has(aName)) {
+                  const baseData = comatrixBase.aElements.get(aName);
+                  if (baseData.schnittstellenMap.has(schnittstelle)) {
+                    inBaselineRow = baseData.schnittstellenMap
+                      .get(schnittstelle)
+                      .has(bName);
+                  }
+                }
+
+                if (!inBaselineRow) {
+                  hasChanges = true;
+                }
+              }
+            },
+          );
+        });
+
+        if (hasChanges) {
+          changedBElements.add(bName);
+        }
       }
     });
 
@@ -528,13 +577,13 @@ function output2Excel(comatrix, outputPath, comatrixBase, comatrixCurrent) {
 
   // Style for removed A-elements (in baseline but not in current) - red fill like C1
   const dataStyleRemovedA = {
-    font: { name: "Calibri", sz: 11 },
+    font: { name: "Calibri", sz: 11, color: { rgb: "FFFFFF" } },
     border: borderStyle,
     fill: { fgColor: { rgb: "C0504D" } }, // RGB 192/80/77
   };
 
   const dataStyleRemovedABold = {
-    font: { name: "Calibri", sz: 11, bold: true },
+    font: { name: "Calibri", sz: 11, bold: true, color: { rgb: "FFFFFF" } },
     border: borderStyle,
     fill: { fgColor: { rgb: "C0504D" } }, // RGB 192/80/77
   };
@@ -596,31 +645,40 @@ function output2Excel(comatrix, outputPath, comatrixBase, comatrixCurrent) {
         const cellValue = data[row][col];
         const aElementName = data[row][1]; // Column B has A-element name (Anwendungssystem)
         const schnittstelle = data[row][2]; // Column C has Schnittstelle
-        const isNewA =
-          baselineSets &&
-          currentSets &&
-          !baselineSets.aElements.has(aElementName);
-        const isRemovedA =
-          baselineSets &&
-          currentSets &&
-          !currentSets.aElements.has(aElementName);
-        const isChangedA = changedAElements.has(aElementName);
+        const rowCombo = `${aElementName}|${schnittstelle}`;
+
+        // Check row combination status
+        const isNewRow =
+          baselineRowCombinations &&
+          currentRowCombinations &&
+          !baselineRowCombinations.has(rowCombo) &&
+          currentRowCombinations.has(rowCombo);
+        const isRemovedRow =
+          baselineRowCombinations &&
+          currentRowCombinations &&
+          baselineRowCombinations.has(rowCombo) &&
+          !currentRowCombinations.has(rowCombo);
+        const isChangedRow = changedRowCombinations.has(rowCombo);
 
         if (col < 4) {
-          // Columns A-D: color based on element status
-          if (isNewA) {
+          // Columns A-D: same color for all cells in a row based on row combination status
+          if (isNewRow) {
+            // New row: all A-D cells green
             worksheet[cellRef].s = isIntern
               ? { ...dataStyleNewABold }
               : { ...dataStyleNewA };
-          } else if (isRemovedA) {
-            worksheet[cellRef].s = isIntern
-              ? { ...dataStyleRemovedABold }
-              : { ...dataStyleRemovedA };
-          } else if (isChangedA) {
+          } else if (isChangedRow) {
+            // Changed row: all A-D cells yellow
             worksheet[cellRef].s = isIntern
               ? { ...dataStyleChangedABold }
               : { ...dataStyleChangedA };
+          } else if (isRemovedRow) {
+            // Removed row: all A-D cells red with white text
+            worksheet[cellRef].s = isIntern
+              ? { ...dataStyleRemovedABold }
+              : { ...dataStyleRemovedA };
           } else {
+            // Normal row: normal coloring
             worksheet[cellRef].s = isIntern
               ? { ...dataStyleLeftColumnsBold }
               : { ...dataStyleLeftColumns };
@@ -671,11 +729,11 @@ function output2Excel(comatrix, outputPath, comatrixBase, comatrixCurrent) {
             }
 
             // "x" cell: color based on connection status or element status
-            if (connectionStatus === "new" || isNewA || isNewB) {
+            if (connectionStatus === "new" || isNewRow || isNewB) {
               worksheet[cellRef].s = { ...dataStyleXNew };
             } else if (
               connectionStatus === "removed" ||
-              isRemovedA ||
+              isRemovedRow ||
               isRemovedB
             ) {
               worksheet[cellRef].s = { ...dataStyleXRemoved };
@@ -760,18 +818,18 @@ function output2Excel(comatrix, outputPath, comatrixBase, comatrixCurrent) {
         if (worksheet[cellRef0]) worksheet[cellRef0].s = styleRemovedBDomain;
         if (worksheet[cellRef1]) worksheet[cellRef1].s = styleRemovedBHeader;
       } else if (isChangedB) {
-        // Changed B-element: orange fill in rows 0 and 1
+        // Changed B-element: yellow fill in rows 0 and 1
         const styleChangedBDomain = {
           font: { name: "Calibri", sz: 11 },
           alignment: { horizontal: "center" },
           border: borderStyle,
-          fill: { fgColor: { rgb: "FFC000" } }, // Orange like B1
+          fill: { fgColor: { rgb: "FFFF00" } }, // Yellow
         };
         const styleChangedBHeader = {
           font: { name: "Calibri", sz: 11 },
           alignment: { horizontal: "center", textRotation: 90, wrapText: true },
           border: borderStyle,
-          fill: { fgColor: { rgb: "FFC000" } }, // Orange like B1
+          fill: { fgColor: { rgb: "FFFF00" } }, // Yellow
         };
         if (worksheet[cellRef0]) worksheet[cellRef0].s = styleChangedBDomain;
         if (worksheet[cellRef1]) worksheet[cellRef1].s = styleChangedBHeader;
