@@ -32,18 +32,27 @@ jobs:
           git config --global user.name "GitHub Action"
           git config --global user.email "action@github.com"
       
-      - name: Create or checkout release branch
+      - name: Deploy to release branch
         run: |
-          git fetch origin release:release 2>/dev/null || git checkout -b release
-          git checkout release || git checkout -b release
-      
-      - name: Copy bundled file to release branch
-        run: |
-          git checkout main -- dist/comatrix-bundled.ajs
-          git add dist/comatrix-bundled.ajs
-      
-      - name: Commit and push to release branch
-        run: |
+          # Create a temporary directory for the release branch
+          mkdir -p /tmp/release
+          cp dist/comatrix-bundled.ajs /tmp/release/
+          
+          # Fetch or create release branch
+          git fetch origin release:release 2>/dev/null || true
+          
+          # Switch to release branch (create if doesn't exist)
+          git checkout release 2>/dev/null || git checkout --orphan release
+          
+          # Remove all files except .git
+          git rm -rf . 2>/dev/null || true
+          
+          # Copy the bundled file
+          cp /tmp/release/comatrix-bundled.ajs .
+          
+          # Add and commit
+          git add comatrix-bundled.ajs
+          
           if git diff --staged --quiet; then
             echo "No changes to commit"
           else
