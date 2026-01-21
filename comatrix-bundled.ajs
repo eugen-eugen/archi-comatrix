@@ -964,12 +964,10 @@ function runComatrix() {
   console.log(`Total unique elements: ${uniqueElements.size}\n`);
 
   // Define output path
-  console.log("model Path=", model.path);
-  console.log("dirName=", path.dirname(model.path));
-  const outputDir = model.path ? path.dirname(model.path) : __DIR__;
-  console.log("outputdir=", outputDir);
+  // Normalize path to use forward slashes (path-browserify only handles POSIX paths)
+  const normalizedPath = model.path ? model.path.replace(/\\/g, "/") : null;
+  const outputDir = normalizedPath ? path.dirname(normalizedPath) : __DIR__;
   const outputPath = path.join(outputDir, "comatrix.xlsm");
-  console.log("outputPath=", outputPath);
 
   console.log(`Output file: ${outputPath}\n`);
 
