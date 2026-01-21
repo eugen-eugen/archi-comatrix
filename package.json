@@ -1,0 +1,30 @@
+{
+  "name": "comatrix",
+  "version": "1.0.0",
+  "description": "Archi script to export model elements to Excel matrix",
+  "main": "comatrix.ajs",
+  "scripts": {
+    "build": "webpack",
+    "test": "node tests/testComatrix.js"
+  },
+  "keywords": [
+    "archi",
+    "archimate",
+    "excel",
+    "export"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "xlsx-js-style": "^1.2.0"
+  },
+  "devDependencies": {
+    "buffer": "^6.0.3",
+    "path-browserify": "^1.0.1",
+    "process": "^0.11.10",
+    "stream-browserify": "^3.0.0",
+    "util": "^0.12.5",
+    "webpack": "^5.104.1",
+    "webpack-cli": "^6.0.1"
+  }
+}
