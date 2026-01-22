@@ -133,6 +133,12 @@ function merge(comatrixBase, comatrixCurrent) {
     if (aElements.has(key)) {
       // Element exists in both - merge Schnittstellen
       const existingData = aElements.get(key);
+      
+      // Update domain: use current if baseline is empty or differs
+      if (!existingData.domain || existingData.domain === "" || existingData.domain !== value.domain) {
+        existingData.domain = value.domain;
+      }
+      
       value.schnittstellenMap.forEach((bSet, schnittstelle) => {
         if (!existingData.schnittstellenMap.has(schnittstelle)) {
           existingData.schnittstellenMap.set(schnittstelle, new Set(bSet));
@@ -160,9 +166,15 @@ function merge(comatrixBase, comatrixCurrent) {
     bElementsMap.set(name, domain);
   });
 
-  // Add current B elements
+  // Add/update current B elements - prefer current domain if baseline is empty or differs
   comatrixCurrent.bElementsMap.forEach((domain, name) => {
-    if (!bElementsMap.has(name)) {
+    if (bElementsMap.has(name)) {
+      const baselineDomain = bElementsMap.get(name);
+      // Use current domain if baseline is empty or differs
+      if (!baselineDomain || baselineDomain === "" || baselineDomain !== domain) {
+        bElementsMap.set(name, domain);
+      }
+    } else {
       bElementsMap.set(name, domain);
     }
   });
