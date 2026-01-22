@@ -126,12 +126,16 @@ function merge(comatrixBase, comatrixCurrent) {
     if (aElements.has(key)) {
       // Element exists in both - merge Schnittstellen
       const existingData = aElements.get(key);
-      
+
       // Update domain: use current if baseline is empty or differs
-      if (!existingData.domain || existingData.domain === "" || existingData.domain !== value.domain) {
+      if (
+        !existingData.domain ||
+        existingData.domain === "" ||
+        existingData.domain !== value.domain
+      ) {
         existingData.domain = value.domain;
       }
-      
+
       value.schnittstellenMap.forEach((bSet, schnittstelle) => {
         if (!existingData.schnittstellenMap.has(schnittstelle)) {
           existingData.schnittstellenMap.set(schnittstelle, new Set(bSet));
@@ -164,7 +168,11 @@ function merge(comatrixBase, comatrixCurrent) {
     if (bElementsMap.has(name)) {
       const baselineDomain = bElementsMap.get(name);
       // Use current domain if baseline is empty or differs
-      if (!baselineDomain || baselineDomain === "" || baselineDomain !== domain) {
+      if (
+        !baselineDomain ||
+        baselineDomain === "" ||
+        baselineDomain !== domain
+      ) {
         bElementsMap.set(name, domain);
       }
     } else {
@@ -401,9 +409,9 @@ function output2Excel(comatrix, outputPath, comatrixBase, comatrixCurrent) {
 
   // Build domain row for B elements (first row)
   const bDomainRow = [
-    "",
-    "",
-    "",
+    "Grün = Hinzugefügt",
+    "Orange = geändert",
+    "Rot = gelöscht",
     "",
     ...sortedBElements.map((bName) => bElementsMap.get(bName)),
   ];
@@ -503,6 +511,19 @@ function output2Excel(comatrix, outputPath, comatrixBase, comatrixCurrent) {
   // Style the rows
   console.log("Step 5: Applying styles and borders to all cells...");
 
+  // Helper function to get text color based on background color
+  const getTextColor = (bgColor) => {
+    if (!bgColor) {
+      return { rgb: "000000" }; // Black for no fill
+    }
+    // Red color (removed elements)
+    if (bgColor === "C0504D") {
+      return { rgb: "FFFFFF" }; // White
+    }
+    // Yellow/Orange color (changed elements) or any other color
+    return { rgb: "000000" }; // Black
+  };
+
   // Define border style
   const borderStyle = {
     top: { style: "thin", color: { rgb: "000000" } },
@@ -527,21 +548,21 @@ function output2Excel(comatrix, outputPath, comatrixBase, comatrixCurrent) {
 
   // Specific styles for A1, B1, C1
   const styleA1 = {
-    font: { name: "Calibri", sz: 11, color: { rgb: "FFFFFF" } },
+    font: { name: "Calibri", sz: 11, color: getTextColor("9BBB59") },
     alignment: { horizontal: "center" },
     border: borderStyle,
     fill: { fgColor: { rgb: "9BBB59" } }, // RGB 155/187/89
   };
 
   const styleB1 = {
-    font: { name: "Calibri", sz: 11 },
+    font: { name: "Calibri", sz: 11, color: getTextColor("FFC000") },
     alignment: { horizontal: "center" },
     border: borderStyle,
     fill: { fgColor: { rgb: "FFC000" } }, // RGB 255/192/0
   };
 
   const styleC1 = {
-    font: { name: "Calibri", sz: 11 },
+    font: { name: "Calibri", sz: 11, color: getTextColor("C0504D") },
     alignment: { horizontal: "center" },
     border: borderStyle,
     fill: { fgColor: { rgb: "C0504D" } }, // RGB 192/80/77
@@ -576,39 +597,39 @@ function output2Excel(comatrix, outputPath, comatrixBase, comatrixCurrent) {
   };
   // Style for new A-elements (not in baseline) - green fill like A1
   const dataStyleNewA = {
-    font: { name: "Calibri", sz: 11, color: { rgb: "FFFFFF" } },
+    font: { name: "Calibri", sz: 11, color: getTextColor("9BBB59") },
     border: borderStyle,
     fill: { fgColor: { rgb: "9BBB59" } }, // RGB 155/187/89
   };
 
   const dataStyleNewABold = {
-    font: { name: "Calibri", sz: 11, bold: true, color: { rgb: "FFFFFF" } },
+    font: { name: "Calibri", sz: 11, bold: true, color: getTextColor("9BBB59") },
     border: borderStyle,
     fill: { fgColor: { rgb: "9BBB59" } }, // RGB 155/187/89
   };
 
   // Style for removed A-elements (in baseline but not in current) - red fill like C1
   const dataStyleRemovedA = {
-    font: { name: "Calibri", sz: 11, color: { rgb: "FFFFFF" } },
+    font: { name: "Calibri", sz: 11, color: getTextColor("C0504D") },
     border: borderStyle,
     fill: { fgColor: { rgb: "C0504D" } }, // RGB 192/80/77
   };
 
   const dataStyleRemovedABold = {
-    font: { name: "Calibri", sz: 11, bold: true, color: { rgb: "FFFFFF" } },
+    font: { name: "Calibri", sz: 11, bold: true, color: getTextColor("C0504D") },
     border: borderStyle,
     fill: { fgColor: { rgb: "C0504D" } }, // RGB 192/80/77
   };
 
   // Style for changed A-elements (in both, with connection changes) - orange fill like B1
   const dataStyleChangedA = {
-    font: { name: "Calibri", sz: 11 },
+    font: { name: "Calibri", sz: 11, color: getTextColor("FFC000") },
     border: borderStyle,
     fill: { fgColor: { rgb: "FFC000" } }, // RGB 255/192/0
   };
 
   const dataStyleChangedABold = {
-    font: { name: "Calibri", sz: 11, bold: true },
+    font: { name: "Calibri", sz: 11, bold: true, color: getTextColor("FFC000") },
     border: borderStyle,
     fill: { fgColor: { rgb: "FFC000" } }, // RGB 255/192/0
   };
@@ -630,7 +651,7 @@ function output2Excel(comatrix, outputPath, comatrixBase, comatrixCurrent) {
 
   // Style for "x" cells in new A or B elements - bold, centered, green fill
   const dataStyleXNew = {
-    font: { name: "Calibri", sz: 11, bold: true, color: { rgb: "FFFFFF" } },
+    font: { name: "Calibri", sz: 11, bold: true, color: getTextColor("9BBB59") },
     alignment: { horizontal: "center" },
     border: borderStyle,
     fill: { fgColor: { rgb: "9BBB59" } }, // RGB 155/187/89 (green)
@@ -638,7 +659,7 @@ function output2Excel(comatrix, outputPath, comatrixBase, comatrixCurrent) {
 
   // Style for "x" cells in removed A or B elements - bold, centered, red fill
   const dataStyleXRemoved = {
-    font: { name: "Calibri", sz: 11, bold: true, color: { rgb: "FFFFFF" } },
+    font: { name: "Calibri", sz: 11, bold: true, color: getTextColor("C0504D") },
     alignment: { horizontal: "center" },
     border: borderStyle,
     fill: { fgColor: { rgb: "C0504D" } }, // RGB 192/80/77 (red)
@@ -800,13 +821,13 @@ function output2Excel(comatrix, outputPath, comatrixBase, comatrixCurrent) {
       if (isNewB) {
         // New B-element: green fill in rows 0 and 1
         const styleNewBDomain = {
-          font: { name: "Calibri", sz: 11, color: { rgb: "FFFFFF" } },
+          font: { name: "Calibri", sz: 11, color: getTextColor("9BBB59") },
           alignment: { horizontal: "center" },
           border: borderStyle,
           fill: { fgColor: { rgb: "9BBB59" } }, // Green like A1
         };
         const styleNewBHeader = {
-          font: { name: "Calibri", sz: 11, color: { rgb: "FFFFFF" } },
+          font: { name: "Calibri", sz: 11, color: getTextColor("9BBB59") },
           alignment: { horizontal: "center", textRotation: 90, wrapText: true },
           border: borderStyle,
           fill: { fgColor: { rgb: "9BBB59" } }, // Green like A1
@@ -816,13 +837,13 @@ function output2Excel(comatrix, outputPath, comatrixBase, comatrixCurrent) {
       } else if (isRemovedB) {
         // Removed B-element: red fill in rows 0 and 1
         const styleRemovedBDomain = {
-          font: { name: "Calibri", sz: 11 },
+          font: { name: "Calibri", sz: 11, color: getTextColor("C0504D") },
           alignment: { horizontal: "center" },
           border: borderStyle,
           fill: { fgColor: { rgb: "C0504D" } }, // Red like C1
         };
         const styleRemovedBHeader = {
-          font: { name: "Calibri", sz: 11 },
+          font: { name: "Calibri", sz: 11, color: getTextColor("C0504D") },
           alignment: { horizontal: "center", textRotation: 90, wrapText: true },
           border: borderStyle,
           fill: { fgColor: { rgb: "C0504D" } }, // Red like C1
@@ -832,13 +853,13 @@ function output2Excel(comatrix, outputPath, comatrixBase, comatrixCurrent) {
       } else if (isChangedB) {
         // Changed B-element: yellow fill in rows 0 and 1
         const styleChangedBDomain = {
-          font: { name: "Calibri", sz: 11 },
+          font: { name: "Calibri", sz: 11, color: getTextColor("FFFF00") },
           alignment: { horizontal: "center" },
           border: borderStyle,
           fill: { fgColor: { rgb: "FFFF00" } }, // Yellow
         };
         const styleChangedBHeader = {
-          font: { name: "Calibri", sz: 11 },
+          font: { name: "Calibri", sz: 11, color: getTextColor("FFFF00") },
           alignment: { horizontal: "center", textRotation: 90, wrapText: true },
           border: borderStyle,
           fill: { fgColor: { rgb: "FFFF00" } }, // Yellow
