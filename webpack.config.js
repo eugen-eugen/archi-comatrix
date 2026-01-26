@@ -3,7 +3,7 @@ const webpack = require("webpack");
 
 module.exports = {
   mode: "production",
-  entry: "./src/main/comatrix-bundled.js",
+  entry: "./src/main/comatrix.js",
   output: {
     path: path.resolve(__dirname, "dist"),
     filename: "comatrix-bundled.ajs",
@@ -17,16 +17,8 @@ module.exports = {
     minimize: false,
   },
   resolve: {
-    alias: {
-      crypto: path.resolve(__dirname, "src/main/crypto-polyfill.js"),
-    },
     fallback: {
-      stream: require.resolve("stream-browserify"),
-      buffer: require.resolve("buffer/"),
-      util: require.resolve("util/"),
       path: require.resolve("path-browserify"),
-      fs: false,
-      events: require.resolve("events/"),
     },
     fullySpecified: false,
   },

@@ -1,232 +1,19 @@
 /**
- * comatrix-bundled.js
- * Entry point for webpack bundling - Excel export using SheetJS with styles
+ * output2Excel.js
+ * Excel export functionality with styling and baseline comparison
  */
 
 const XLSX = require("xlsx-js-style");
-const path = require("path-browserify");
 
-/**
- * Builds a connectivity matrix from an Archi model
- * @param {Object} currentModel - The Archi model to analyze
- * @returns {Object} Matrix data structure with aElements, bElementsMap, sortedAElements, sortedBElements, and relationships
- */
-function buildComatrix(currentModel) {
-  console.log("Step 1: Analyzing relationships and building matrix...");
-
-  // Extract relationships from the model
-  const relationships = extractElements(currentModel);
-  console.log(`Found ${relationships.length} triggering relationships`);
-
-  // Collect all unique A elements (targets) and B elements (sources)
-  // Map structure: A element name -> {domain, schnittstellenMap}
-  const aElements = new Map();
-  const bElementsMap = new Map(); // Store B elements with their domains
-
-  relationships.forEach((rel) => {
-    const aName = rel.target.name;
-    const bName = rel.source.name;
-    const schnittstelle = rel.schnittstelle || "N/A";
-    const aDomain = rel.targetDomain;
-    const bDomain = rel.sourceDomain;
-
-    if (!aElements.has(aName)) {
-      aElements.set(aName, {
-        domain: aDomain,
-        schnittstellenMap: new Map(),
-      });
-    }
-
-    const aData = aElements.get(aName);
-    if (!aData.schnittstellenMap.has(schnittstelle)) {
-      aData.schnittstellenMap.set(schnittstelle, new Set());
-    }
-
-    aData.schnittstellenMap.get(schnittstelle).add(bName);
-
-    // Store B element with its domain
-    if (!bElementsMap.has(bName)) {
-      bElementsMap.set(bName, bDomain);
-    }
-  });
-
-  console.log(
-    `Found ${aElements.size} target elements (A) and ${bElementsMap.size} source elements (B)`,
-  );
-  console.log("Step 2: Sorting elements...");
-
-  // Sort A elements by domain (empty domains last), then by element name
-  const sortedAElements = Array.from(aElements.keys()).sort((a, b) => {
-    const domainA = aElements.get(a).domain;
-    const domainB = aElements.get(b).domain;
-
-    // Empty domains go to the end
-    if (domainA === "" && domainB !== "") return 1;
-    if (domainA !== "" && domainB === "") return -1;
-
-    // Compare domains
-    if (domainA !== domainB) {
-      return domainA.localeCompare(domainB);
-    }
-
-    // Same domain, sort by element name
-    return a.localeCompare(b);
-  });
-
-  const sortedBElements = Array.from(bElementsMap.keys()).sort((a, b) => {
-    const domainA = bElementsMap.get(a);
-    const domainB = bElementsMap.get(b);
-
-    // Empty domains go to the end
-    if (domainA === "" && domainB !== "") return 1;
-    if (domainA !== "" && domainB === "") return -1;
-
-    // Compare domains
-    if (domainA !== domainB) {
-      return domainA.localeCompare(domainB);
-    }
-
-    // Same domain, sort by element name
-    return a.localeCompare(b);
-  });
-
-  console.log("Matrix data structure built successfully.");
-
-  return {
-    aElements,
-    bElementsMap,
-    sortedAElements,
-    sortedBElements,
-    relationships,
-  };
-}
-
-/**
- * Merges two connectivity matrices (baseline and current)
- * @param {Object} comatrixBase - Matrix data structure from buildComatrix(baselineModel)
- * @param {Object} comatrixCurrent - Matrix data structure from buildComatrix(currentModel)
- * @returns {Object} Merged matrix data structure containing all elements from both models
- */
-function merge(comatrixBase, comatrixCurrent) {
-  console.log("Merging baseline and current matrices...");
-
-  // Merge A elements
-  const aElements = new Map();
-
-  // Copy baseline A elements
-  comatrixBase.aElements.forEach((value, key) => {
-    aElements.set(key, {
-      domain: value.domain,
-      schnittstellenMap: new Map(value.schnittstellenMap),
-    });
-  });
-
-  // Merge current A elements
-  comatrixCurrent.aElements.forEach((value, key) => {
-    if (aElements.has(key)) {
-      // Element exists in both - merge Schnittstellen
-      const existingData = aElements.get(key);
-
-      // Update domain: use current if baseline is empty or differs
-      if (
-        !existingData.domain ||
-        existingData.domain === "" ||
-        existingData.domain !== value.domain
-      ) {
-        existingData.domain = value.domain;
-      }
-
-      value.schnittstellenMap.forEach((bSet, schnittstelle) => {
-        if (!existingData.schnittstellenMap.has(schnittstelle)) {
-          existingData.schnittstellenMap.set(schnittstelle, new Set(bSet));
-        } else {
-          // Merge B elements for this Schnittstelle
-          bSet.forEach((b) =>
-            existingData.schnittstellenMap.get(schnittstelle).add(b),
-          );
-        }
-      });
-    } else {
-      // New element from current
-      aElements.set(key, {
-        domain: value.domain,
-        schnittstellenMap: new Map(value.schnittstellenMap),
-      });
-    }
-  });
-
-  // Merge B elements
-  const bElementsMap = new Map();
-
-  // Copy baseline B elements
-  comatrixBase.bElementsMap.forEach((domain, name) => {
-    bElementsMap.set(name, domain);
-  });
-
-  // Add/update current B elements - prefer current domain if baseline is empty or differs
-  comatrixCurrent.bElementsMap.forEach((domain, name) => {
-    if (bElementsMap.has(name)) {
-      const baselineDomain = bElementsMap.get(name);
-      // Use current domain if baseline is empty or differs
-      if (
-        !baselineDomain ||
-        baselineDomain === "" ||
-        baselineDomain !== domain
-      ) {
-        bElementsMap.set(name, domain);
-      }
-    } else {
-      bElementsMap.set(name, domain);
-    }
-  });
-
-  // Sort merged elements
-  const sortedAElements = Array.from(aElements.keys()).sort((a, b) => {
-    const domainA = aElements.get(a).domain;
-    const domainB = aElements.get(b).domain;
-
-    if (domainA === "" && domainB !== "") return 1;
-    if (domainA !== "" && domainB === "") return -1;
-
-    if (domainA !== domainB) {
-      return domainA.localeCompare(domainB);
-    }
-
-    return a.localeCompare(b);
-  });
-
-  const sortedBElements = Array.from(bElementsMap.keys()).sort((a, b) => {
-    const domainA = bElementsMap.get(a);
-    const domainB = bElementsMap.get(b);
-
-    if (domainA === "" && domainB !== "") return 1;
-    if (domainA !== "" && domainB === "") return -1;
-
-    if (domainA !== domainB) {
-      return domainA.localeCompare(domainB);
-    }
-
-    return a.localeCompare(b);
-  });
-
-  // Merge relationships
-  const relationships = [
-    ...comatrixBase.relationships,
-    ...comatrixCurrent.relationships,
-  ];
-
-  console.log(
-    `Merged matrix: ${aElements.size} A-elements, ${bElementsMap.size} B-elements, ${relationships.length} relationships`,
-  );
-
-  return {
-    aElements,
-    bElementsMap,
-    sortedAElements,
-    sortedBElements,
-    relationships,
-  };
-}
+// Color constants for Excel styling
+const COLOR_ADDED = "9BBB59"; // Green (RGB 155/187/89) - New elements
+const COLOR_CHANGED = "FFC000"; // Orange (RGB 255/192/0) - Changed elements
+const COLOR_CHANGED_ALT = "FFFF00"; // Yellow (RGB 255/255/0) - Alternative changed color
+const COLOR_REMOVED = "C0504D"; // Red (RGB 192/80/77) - Removed elements
+const COLOR_HEADER_GRAY = "D9D9D9"; // Light gray (RGB 217/217/217) - Headers
+const COLOR_COLUMN_BLUE = "B8CCE4"; // Light blue (RGB 184/204/228) - B-element columns
+const COLOR_TEXT_BLACK = "000000"; // Black - Default text
+const COLOR_TEXT_WHITE = "FFFFFF"; // White - Text on red background
 
 /**
  * Outputs a connectivity matrix to Excel with optional baseline comparison
@@ -413,7 +200,7 @@ function output2Excel(comatrix, outputPath, comatrixBase, comatrixCurrent) {
     "Orange = geändert",
     "Rot = gelöscht",
     "",
-    ...sortedBElements.map((bName) => bElementsMap.get(bName)),
+    ...sortedBElements.map((bName) => bElementsMap.get(bName).domain),
   ];
 
   // Build header row (second row)
@@ -443,7 +230,7 @@ function output2Excel(comatrix, outputPath, comatrixBase, comatrixCurrent) {
 
       sortedBElements.forEach((bName) => {
         if (targetSet.has(bName)) {
-          const bDomain = bElementsMap.get(bName);
+          const bDomain = bElementsMap.get(bName).domain;
           if (aDomain !== "" && bDomain !== "") {
             hasConnectionWithDomain = true;
           } else {
@@ -514,155 +301,175 @@ function output2Excel(comatrix, outputPath, comatrixBase, comatrixCurrent) {
   // Helper function to get text color based on background color
   const getTextColor = (bgColor) => {
     if (!bgColor) {
-      return { rgb: "000000" }; // Black for no fill
+      return { rgb: COLOR_TEXT_BLACK }; // Black for no fill
     }
     // Red color (removed elements)
-    if (bgColor === "C0504D") {
-      return { rgb: "FFFFFF" }; // White
+    if (bgColor === COLOR_REMOVED) {
+      return { rgb: COLOR_TEXT_WHITE }; // White
     }
     // Yellow/Orange color (changed elements) or any other color
-    return { rgb: "000000" }; // Black
+    return { rgb: COLOR_TEXT_BLACK }; // Black
+  };
+
+  // Helper function to get font style based on background color and bold flag
+  const getFontStyle = (bgColor, bold = false) => {
+    const fontStyle = {
+      name: "Calibri",
+      sz: 11,
+      color: getTextColor(bgColor),
+      /*
+      bold: function () {
+        this.bold = true;
+      }.bind(this),
+      */
+    };
+
+    if (bold) {
+      fontStyle.bold = true;
+    }
+
+    return fontStyle;
   };
 
   // Define border style
   const borderStyle = {
-    top: { style: "thin", color: { rgb: "000000" } },
-    bottom: { style: "thin", color: { rgb: "000000" } },
-    left: { style: "thin", color: { rgb: "000000" } },
-    right: { style: "thin", color: { rgb: "000000" } },
+    top: { style: "thin", color: { rgb: COLOR_TEXT_BLACK } },
+    bottom: { style: "thin", color: { rgb: COLOR_TEXT_BLACK } },
+    left: { style: "thin", color: { rgb: COLOR_TEXT_BLACK } },
+    right: { style: "thin", color: { rgb: COLOR_TEXT_BLACK } },
   };
 
   // Base style for all cells: Calibri 11 with borders
   const baseStyle = {
-    font: { name: "Calibri", sz: 11 },
+    font: getFontStyle(),
     border: borderStyle,
   };
 
   // Style for B-element domain row (row 0) columns D onwards - normal, RGB 217/217/217
   const domainStyleGray = {
-    font: { name: "Calibri", sz: 11 },
+    font: getFontStyle(),
     alignment: { horizontal: "center" },
     border: borderStyle,
-    fill: { fgColor: { rgb: "D9D9D9" } },
+    fill: { fgColor: { rgb: COLOR_HEADER_GRAY } },
   };
 
   // Specific styles for A1, B1, C1
   const styleA1 = {
-    font: { name: "Calibri", sz: 11, color: getTextColor("9BBB59") },
+    font: getFontStyle(COLOR_ADDED),
     alignment: { horizontal: "center" },
     border: borderStyle,
-    fill: { fgColor: { rgb: "9BBB59" } }, // RGB 155/187/89
+    fill: { fgColor: { rgb: COLOR_ADDED } },
   };
 
   const styleB1 = {
-    font: { name: "Calibri", sz: 11, color: getTextColor("FFC000") },
+    font: getFontStyle(COLOR_CHANGED),
     alignment: { horizontal: "center" },
     border: borderStyle,
-    fill: { fgColor: { rgb: "FFC000" } }, // RGB 255/192/0
+    fill: { fgColor: { rgb: COLOR_CHANGED } },
   };
 
   const styleC1 = {
-    font: { name: "Calibri", sz: 11, color: getTextColor("C0504D") },
+    font: getFontStyle(COLOR_REMOVED),
     alignment: { horizontal: "center" },
     border: borderStyle,
-    fill: { fgColor: { rgb: "C0504D" } }, // RGB 192/80/77
+    fill: { fgColor: { rgb: COLOR_REMOVED } },
   };
 
   // Style for main header row (row 1) columns A-D - bold, RGB 217/217/217
   const headerStyleStandard = {
-    font: { name: "Calibri", sz: 11, bold: true },
+    font: getFontStyle(null, true),
     alignment: { horizontal: "center" },
     border: borderStyle,
-    fill: { fgColor: { rgb: "D9D9D9" } },
+    fill: { fgColor: { rgb: COLOR_HEADER_GRAY } },
   };
 
   // Style for main header row (row 1) B-element columns - normal, vertical, RGB 184/204/228
   const headerStyleVertical = {
-    font: { name: "Calibri", sz: 11 },
+    font: getFontStyle(),
     alignment: { horizontal: "center", textRotation: 90, wrapText: true },
     border: borderStyle,
-    fill: { fgColor: { rgb: "B8CCE4" } }, // RGB 184/204/228
+    fill: { fgColor: { rgb: COLOR_COLUMN_BLUE } },
   };
 
   // Style for data cells columns A-D - Calibri 11 with borders, no fill
   const dataStyleLeftColumns = {
-    font: { name: "Calibri", sz: 11 },
+    font: getFontStyle(),
     border: borderStyle,
   };
 
   // Style for data cells columns A-D (bold for intern rows) - Calibri 11 with borders, no fill
   const dataStyleLeftColumnsBold = {
-    font: { name: "Calibri", sz: 11, bold: true },
+    font: getFontStyle(null, true),
     border: borderStyle,
   };
   // Style for new A-elements (not in baseline) - green fill like A1
   const dataStyleNewA = {
-    font: { name: "Calibri", sz: 11, color: getTextColor("9BBB59") },
+    font: getFontStyle(COLOR_ADDED),
     border: borderStyle,
-    fill: { fgColor: { rgb: "9BBB59" } }, // RGB 155/187/89
+    fill: { fgColor: { rgb: COLOR_ADDED } },
   };
 
   const dataStyleNewABold = {
-    font: { name: "Calibri", sz: 11, bold: true, color: getTextColor("9BBB59") },
+    font: getFontStyle(COLOR_ADDED, true),
     border: borderStyle,
-    fill: { fgColor: { rgb: "9BBB59" } }, // RGB 155/187/89
+    fill: { fgColor: { rgb: COLOR_ADDED } },
   };
 
   // Style for removed A-elements (in baseline but not in current) - red fill like C1
   const dataStyleRemovedA = {
-    font: { name: "Calibri", sz: 11, color: getTextColor("C0504D") },
+    font: getFontStyle(COLOR_REMOVED),
     border: borderStyle,
-    fill: { fgColor: { rgb: "C0504D" } }, // RGB 192/80/77
+    fill: { fgColor: { rgb: COLOR_REMOVED } },
   };
 
   const dataStyleRemovedABold = {
-    font: { name: "Calibri", sz: 11, bold: true, color: getTextColor("C0504D") },
+    font: getFontStyle(COLOR_REMOVED, true),
     border: borderStyle,
-    fill: { fgColor: { rgb: "C0504D" } }, // RGB 192/80/77
+    fill: { fgColor: { rgb: COLOR_REMOVED } },
   };
 
   // Style for changed A-elements (in both, with connection changes) - orange fill like B1
   const dataStyleChangedA = {
-    font: { name: "Calibri", sz: 11, color: getTextColor("FFC000") },
+    font: getFontStyle(COLOR_CHANGED),
     border: borderStyle,
-    fill: { fgColor: { rgb: "FFC000" } }, // RGB 255/192/0
+    fill: { fgColor: { rgb: COLOR_CHANGED } },
   };
 
   const dataStyleChangedABold = {
-    font: { name: "Calibri", sz: 11, bold: true, color: getTextColor("FFC000") },
+    font: getFontStyle(COLOR_CHANGED, true),
     border: borderStyle,
-    fill: { fgColor: { rgb: "FFC000" } }, // RGB 255/192/0
+    fill: { fgColor: { rgb: COLOR_CHANGED } },
   };
   // Style for data cells columns E onwards - Calibri 11 with borders, RGB 184/204/228, centered
   const dataStyleRightColumns = {
-    font: { name: "Calibri", sz: 11 },
+    font: getFontStyle(),
     alignment: { horizontal: "center" },
     border: borderStyle,
-    fill: { fgColor: { rgb: "B8CCE4" } }, // RGB 184/204/228
+    fill: { fgColor: { rgb: COLOR_COLUMN_BLUE } },
   };
 
   // Style for "x" cells - bold, centered, RGB 184/204/228
   const dataStyleX = {
-    font: { name: "Calibri", sz: 11, bold: true },
+    font: getFontStyle(null, true),
     alignment: { horizontal: "center" },
     border: borderStyle,
-    fill: { fgColor: { rgb: "B8CCE4" } }, // RGB 184/204/228
+    fill: { fgColor: { rgb: COLOR_COLUMN_BLUE } },
   };
 
   // Style for "x" cells in new A or B elements - bold, centered, green fill
   const dataStyleXNew = {
-    font: { name: "Calibri", sz: 11, bold: true, color: getTextColor("9BBB59") },
+    font: getFontStyle(COLOR_ADDED, true),
     alignment: { horizontal: "center" },
     border: borderStyle,
-    fill: { fgColor: { rgb: "9BBB59" } }, // RGB 155/187/89 (green)
+    fill: { fgColor: { rgb: COLOR_ADDED } },
   };
 
   // Style for "x" cells in removed A or B elements - bold, centered, red fill
   const dataStyleXRemoved = {
-    font: { name: "Calibri", sz: 11, bold: true, color: getTextColor("C0504D") },
+    font: getFontStyle(COLOR_REMOVED, true),
     alignment: { horizontal: "center" },
     border: borderStyle,
-    fill: { fgColor: { rgb: "C0504D" } }, // RGB 192/80/77 (red)
+    fill: { fgColor: { rgb: COLOR_REMOVED } },
   };
 
   // Apply base style to all cells first
@@ -821,48 +628,48 @@ function output2Excel(comatrix, outputPath, comatrixBase, comatrixCurrent) {
       if (isNewB) {
         // New B-element: green fill in rows 0 and 1
         const styleNewBDomain = {
-          font: { name: "Calibri", sz: 11, color: getTextColor("9BBB59") },
+          font: getFontStyle(COLOR_ADDED),
           alignment: { horizontal: "center" },
           border: borderStyle,
-          fill: { fgColor: { rgb: "9BBB59" } }, // Green like A1
+          fill: { fgColor: { rgb: COLOR_ADDED } },
         };
         const styleNewBHeader = {
-          font: { name: "Calibri", sz: 11, color: getTextColor("9BBB59") },
+          font: getFontStyle(COLOR_ADDED),
           alignment: { horizontal: "center", textRotation: 90, wrapText: true },
           border: borderStyle,
-          fill: { fgColor: { rgb: "9BBB59" } }, // Green like A1
+          fill: { fgColor: { rgb: COLOR_ADDED } },
         };
         if (worksheet[cellRef0]) worksheet[cellRef0].s = styleNewBDomain;
         if (worksheet[cellRef1]) worksheet[cellRef1].s = styleNewBHeader;
       } else if (isRemovedB) {
         // Removed B-element: red fill in rows 0 and 1
         const styleRemovedBDomain = {
-          font: { name: "Calibri", sz: 11, color: getTextColor("C0504D") },
+          font: getFontStyle(COLOR_REMOVED),
           alignment: { horizontal: "center" },
           border: borderStyle,
-          fill: { fgColor: { rgb: "C0504D" } }, // Red like C1
+          fill: { fgColor: { rgb: COLOR_REMOVED } },
         };
         const styleRemovedBHeader = {
-          font: { name: "Calibri", sz: 11, color: getTextColor("C0504D") },
+          font: getFontStyle(COLOR_REMOVED),
           alignment: { horizontal: "center", textRotation: 90, wrapText: true },
           border: borderStyle,
-          fill: { fgColor: { rgb: "C0504D" } }, // Red like C1
+          fill: { fgColor: { rgb: COLOR_REMOVED } },
         };
         if (worksheet[cellRef0]) worksheet[cellRef0].s = styleRemovedBDomain;
         if (worksheet[cellRef1]) worksheet[cellRef1].s = styleRemovedBHeader;
       } else if (isChangedB) {
         // Changed B-element: yellow fill in rows 0 and 1
         const styleChangedBDomain = {
-          font: { name: "Calibri", sz: 11, color: getTextColor("FFFF00") },
+          font: getFontStyle(COLOR_CHANGED_ALT),
           alignment: { horizontal: "center" },
           border: borderStyle,
-          fill: { fgColor: { rgb: "FFFF00" } }, // Yellow
+          fill: { fgColor: { rgb: COLOR_CHANGED_ALT } },
         };
         const styleChangedBHeader = {
-          font: { name: "Calibri", sz: 11, color: getTextColor("FFFF00") },
+          font: getFontStyle(COLOR_CHANGED_ALT),
           alignment: { horizontal: "center", textRotation: 90, wrapText: true },
           border: borderStyle,
-          fill: { fgColor: { rgb: "FFFF00" } }, // Yellow
+          fill: { fgColor: { rgb: COLOR_CHANGED_ALT } },
         };
         if (worksheet[cellRef0]) worksheet[cellRef0].s = styleChangedBDomain;
         if (worksheet[cellRef1]) worksheet[cellRef1].s = styleChangedBHeader;
@@ -898,240 +705,4 @@ function output2Excel(comatrix, outputPath, comatrixBase, comatrixCurrent) {
   console.log(`Step 8: Excel file created successfully: ${outputPath}`);
 }
 
-/**
- * Finds the domain for an element by traversing aggregation/composition relationships
- * @param {Object} element - The Archi element
- * @returns {String} The domain name or empty string if not found
- */
-function findDomain(element) {
-  // Check if this element itself has the "Domäne" property
-  const domainProp = element.prop("Domäne");
-  if (domainProp) {
-    return element.name;
-  }
-
-  // Find incoming aggregation or composition relationships
-  const incomingRels = $(element)
-    .inRels("aggregation-relationship")
-    .add($(element).inRels("composition-relationship"));
-
-  // Traverse up the hierarchy
-  const visited = new Set();
-  visited.add(element.id);
-
-  for (let i = 0; i < incomingRels.length; i++) {
-    const rel = incomingRels[i];
-    const parent = rel.source;
-
-    if (visited.has(parent.id)) {
-      continue; // Avoid circular references
-    }
-
-    // Recursively search in parent
-    const domain = findDomain(parent);
-    if (domain !== "") {
-      return domain;
-    }
-  }
-
-  return "";
-}
-
-/**
- * Extracts triggering relationship information from Archi model
- * @param {Object} model - Archi model object
- * @returns {Array} Array of relationship objects with source, target, and Schnittstelle property
- */
-function extractElements(model) {
-  const relationships = [];
-
-  // Get all triggering relationships from the model where name starts with NST_
-  $(model)
-    .find("triggering-relationship")
-    .each((relationship) => {
-      if (relationship.name && relationship.name.startsWith("NST_")) {
-        // Get the Schnittstelle property values, can be multiply with same key
-        const schnittstellen = relationship.prop("Schnittstelle", true) || "";
-
-        // Find domains for source and target
-        const sourceDomain = findDomain(relationship.source);
-
-        const targetDomain = findDomain(relationship.target);
-        schnittstellen.forEach((schnittstelle) => {
-          relationships.push({
-            id: relationship.id,
-            name: relationship.name,
-            source: relationship.source,
-            target: relationship.target,
-            schnittstelle: schnittstelle,
-            sourceDomain: sourceDomain,
-            targetDomain: targetDomain,
-          });
-        });
-      }
-    });
-
-  return relationships;
-}
-
-/**
- * Main execution function
- */
-function runComatrix() {
-  console.clear();
-  console.show();
-  console.log("=== Comatrix - Generate Connectivity Matrix ===\n");
-
-  // Check if a model is selected
-  if (!model) {
-    console.log(
-      "ERROR: No model is selected. Please open or create a model first.",
-    );
-    return;
-  }
-
-  console.log(`Selected model: ${model.name}`);
-  console.log(`Model path: ${model.path || "(not saved)"}\n`);
-
-  // List all loaded models
-  const loadedModels = $.model.getLoadedModels();
-  console.log(`Total loaded models: ${loadedModels.length}`);
-  loadedModels.forEach((m, index) => {
-    const marker = m === model ? "→" : " ";
-    console.log(`${marker} ${index + 1}. ${m.name}`);
-  });
-  console.log("");
-
-  // Check for baseline model
-  const baselineProperty = model.prop("baseline");
-  let baselineModel = null;
-  let compareMode = false;
-
-  if (!baselineProperty || baselineProperty.trim() === "") {
-    console.log("ℹ Property 'baseline' is not set in the selected model.");
-    console.log("Running in single model mode.\n");
-  } else {
-    console.log(`Looking for baseline model: "${baselineProperty}"`);
-
-    // Search for baseline model among loaded models
-    baselineModel = loadedModels.find((m) => m.name === baselineProperty);
-
-    if (baselineModel) {
-      console.log(`✓ Baseline model found: ${baselineModel.name}`);
-      console.log(`  Baseline path: ${baselineModel.path || "(not saved)"}`);
-      console.log("Running in COMPARE MODE.\n");
-      compareMode = true;
-    } else {
-      console.log(`✗ Baseline model "${baselineProperty}" is not opened.`);
-      console.log("Running in single model mode.\n");
-    }
-  }
-
-  // Extract all triggering relationships from the selected model
-  console.log("Extracting triggering relationships starting with NST_...");
-  const elements = extractElements(model);
-  console.log(`Found ${elements.length} triggering relationships`);
-
-  // Print domain information for verification
-  console.log("\n=== Domain Information ===");
-  const uniqueElements = new Map();
-
-  elements.forEach((rel) => {
-    if (!uniqueElements.has(rel.source.name)) {
-      uniqueElements.set(rel.source.name, rel.sourceDomain);
-    }
-    if (!uniqueElements.has(rel.target.name)) {
-      uniqueElements.set(rel.target.name, rel.targetDomain);
-    }
-  });
-
-  console.log(`Total unique elements: ${uniqueElements.size}\n`);
-
-  // Define output path
-  // Normalize path to use forward slashes (path-browserify only handles POSIX paths)
-  const normalizedPath = model.path ? model.path.replace(/\\/g, "/") : null;
-  const outputDir = normalizedPath ? path.dirname(normalizedPath) : __DIR__;
-  const outputPath = path.join(outputDir, "comatrix.xlsm");
-
-  console.log(`Output file: ${outputPath}\n`);
-
-  // Generate Excel file
-  console.log("Generating Excel file...");
-
-  try {
-    let comatrix;
-    let comatrixBase = null;
-    let comatrixCurrent = null;
-
-    if (compareMode) {
-      // Build matrices for both models
-      console.log("Building matrix for baseline model...");
-      comatrixBase = buildComatrix(baselineModel);
-      console.log(
-        `Baseline: ${comatrixBase.relationships.length} relationships\n`,
-      );
-
-      console.log("Building matrix for current model...");
-      comatrixCurrent = buildComatrix(model);
-      console.log(
-        `Current: ${comatrixCurrent.relationships.length} relationships\n`,
-      );
-
-      if (comatrixCurrent.relationships.length === 0) {
-        console.log(
-          "⚠ No NST_* triggering relationships found in the current model.",
-        );
-        return;
-      }
-
-      // Merge baseline and current
-      comatrix = merge(comatrixBase, comatrixCurrent);
-      console.log("");
-    } else {
-      // Single model mode - just build from current model
-      comatrix = buildComatrix(model);
-
-      if (comatrix.relationships.length === 0) {
-        console.log(
-          "⚠ No NST_* triggering relationships found in the selected model.",
-        );
-        return;
-      }
-    }
-
-    // Output to Excel with optional baseline comparison
-    output2Excel(comatrix, outputPath, comatrixBase, comatrixCurrent);
-
-    console.log("\n=== Export Complete ===");
-    console.log(`Matrix file saved to: ${outputPath}`);
-    console.log(
-      `Total triggering relationships processed: ${comatrix.relationships.length}`,
-    );
-
-    // Open the file location in file browser
-    try {
-      java.awt.Desktop.getDesktop().open(new java.io.File(outputDir));
-    } catch (e) {
-      console.log("Could not open file browser automatically.");
-    }
-  } catch (error) {
-    console.log(`\n✗ ERROR: Failed to create Excel file`);
-    console.log(`Error message: ${error.message}`);
-    console.log(`Error type: ${error.constructor.name}`);
-    if (error.stack) {
-      console.log(`Stack trace:\n${error.stack}`);
-    }
-  }
-}
-
-// Export functions for bundling
-module.exports = {
-  buildComatrix,
-  merge,
-  output2Excel,
-  extractElements,
-  runComatrix,
-};
-
-// Execute the main function when script is loaded
-runComatrix();
+module.exports = output2Excel;
