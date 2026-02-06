@@ -141,13 +141,21 @@ function runAppList() {
 
   try {
     // Find all application components with specific specializations
-    console.log('Searching for application components with specializations: "Geschäftsanwendung", "Register", "Querschnittsanwendung"...');
-    
+    console.log(
+      'Searching for application components with specializations: "Geschäftsanwendung", "Register", "Querschnittsanwendung"...',
+    );
+
     const allAppComponents = $("application-component");
-    console.log(`Total application components found: ${allAppComponents.length}`);
+    console.log(
+      `Total application components found: ${allAppComponents.length}`,
+    );
 
     const applications = [];
-    const allowedSpecializations = ["Geschäftsanwendung", "Register", "Querschnittsanwendung"];
+    const allowedSpecializations = [
+      "Geschäftsanwendung",
+      "Register",
+      "Querschnittsanwendung",
+    ];
 
     allAppComponents.each((appComponent) => {
       const spec = appComponent.specialization;
@@ -166,15 +174,25 @@ function runAppList() {
     console.log(`Found ${applications.length} applications\n`);
 
     if (applications.length === 0) {
-      console.log('⚠ No application components with the specified specializations found.');
+      console.log(
+        "⚠ No application components with the specified specializations found.",
+      );
       return;
     }
 
     // Sort by fachbereich, then domain, then typ, then name
     applications.sort((a, b) => {
       // Empty Fachbereich go to the end
-      if (a.fachbereich === "(kein Fachbereich)" && b.fachbereich !== "(kein Fachbereich)") return 1;
-      if (a.fachbereich !== "(kein Fachbereich)" && b.fachbereich === "(kein Fachbereich)") return -1;
+      if (
+        a.fachbereich === "(kein Fachbereich)" &&
+        b.fachbereich !== "(kein Fachbereich)"
+      )
+        return 1;
+      if (
+        a.fachbereich !== "(kein Fachbereich)" &&
+        b.fachbereich === "(kein Fachbereich)"
+      )
+        return -1;
 
       // Compare Fachbereich
       if (a.fachbereich !== b.fachbereich) {
@@ -182,8 +200,10 @@ function runAppList() {
       }
 
       // Empty domains go to the end
-      if (a.domain === "(keine Domäne)" && b.domain !== "(keine Domäne)") return 1;
-      if (a.domain !== "(keine Domäne)" && b.domain === "(keine Domäne)") return -1;
+      if (a.domain === "(keine Domäne)" && b.domain !== "(keine Domäne)")
+        return 1;
+      if (a.domain !== "(keine Domäne)" && b.domain === "(keine Domäne)")
+        return -1;
 
       // Compare domains
       if (a.domain !== b.domain) {
@@ -230,15 +250,19 @@ function runAppList() {
     console.log("\n=== Export Complete ===");
     console.log(`Application list saved to: ${outputPath}`);
     console.log(`Total applications: ${applications.length}`);
-    
+
     // Count by type
     const countByType = {};
     applications.forEach((app) => {
       countByType[app.typ] = (countByType[app.typ] || 0) + 1;
     });
-    console.log(`  - Geschäftsanwendung: ${countByType["Geschäftsanwendung"] || 0}`);
+    console.log(
+      `  - Geschäftsanwendung: ${countByType["Geschäftsanwendung"] || 0}`,
+    );
     console.log(`  - Register: ${countByType["Register"] || 0}`);
-    console.log(`  - Querschnittsanwendung: ${countByType["Querschnittsanwendung"] || 0}`);
+    console.log(
+      `  - Querschnittsanwendung: ${countByType["Querschnittsanwendung"] || 0}`,
+    );
 
     // Open the file location in file browser
     try {

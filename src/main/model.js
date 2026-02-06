@@ -45,12 +45,17 @@ function findAllGroupings(element, targetSpecialization, visited, currentPath) {
     }
 
     // Recursively search in parent
-    const parentResult = findAllGroupings(parent, targetSpecialization, visited, currentPath);
-    
+    const parentResult = findAllGroupings(
+      parent,
+      targetSpecialization,
+      visited,
+      currentPath,
+    );
+
     if (parentResult.hasCycle) {
       result.hasCycle = true;
     }
-    
+
     // Add found groupings from parent
     parentResult.found.forEach((name) => {
       if (!result.found.includes(name)) {
@@ -74,15 +79,15 @@ function findDomain(element) {
   const visited = new Set();
   const currentPath = new Set();
   const result = findAllGroupings(element, "Domäne", visited, currentPath);
-  
+
   if (result.hasCycle) {
     return "cycle";
   }
-  
+
   if (result.found.length === 0) {
     return "";
   }
-  
+
   return result.found.join(", ");
 }
 
@@ -95,15 +100,15 @@ function findFachbereich(element) {
   const visited = new Set();
   const currentPath = new Set();
   const result = findAllGroupings(element, "Fachbereich", visited, currentPath);
-  
+
   if (result.hasCycle) {
     return "cycle";
   }
-  
+
   if (result.found.length === 0) {
     return "";
   }
-  
+
   return result.found.join(", ");
 }
 
