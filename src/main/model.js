@@ -4,16 +4,30 @@
  */
 
 /**
- * Finds the domain for an element by traversing aggregation/composition relationships
+ * Helper function to find all groupings with a specific specialization
  * @param {Object} element - The Archi element
- * @returns {String} The domain name or empty string if not found
+ * @param {String} targetSpecialization - The specialization to look for (e.g., "Domäne", "Fachbereich")
+ * @param {Set} visited - Set of already visited element IDs to detect cycles
+ * @param {Object} currentPath - Set of elements in current traversal path for cycle detection
+ * @returns {Object} Object with {found: Array<String>, hasCycle: Boolean}
  */
-function findDomain(element) {
-  // Check if this element's specialization is "Domäne"
-  const specialization = element.specialization;
-  if (specialization === "Domäne") {
-    return element.name;
+function findAllGroupings(element, targetSpecialization, visited, currentPath) {
+  const result = { found: [], hasCycle: false };
+
+  // Check if we've encountered a cycle in the current path
+  if (currentPath.has(element.id)) {
+    result.hasCycle = true;
+    return result;
   }
+
+  // Check if this element itself has the target specialization
+  if (element.specialization === targetSpecialization) {
+    result.found.push(element.name);
+  }
+
+  // Mark as visited
+  visited.add(element.id);
+  currentPath.add(element.id);
 
   // Find incoming aggregation or composition relationships
   const incomingRels = $(element)
@@ -21,25 +35,76 @@ function findDomain(element) {
     .add($(element).inRels("composition-relationship"));
 
   // Traverse up the hierarchy
-  const visited = new Set();
-  visited.add(element.id);
-
   for (let i = 0; i < incomingRels.length; i++) {
     const rel = incomingRels[i];
     const parent = rel.source;
 
-    if (visited.has(parent.id)) {
-      continue; // Avoid circular references
+    // Skip if already visited (but not in current path - that would be a cycle)
+    if (visited.has(parent.id) && !currentPath.has(parent.id)) {
+      continue;
     }
 
     // Recursively search in parent
-    const domain = findDomain(parent);
-    if (domain !== "") {
-      return domain;
+    const parentResult = findAllGroupings(parent, targetSpecialization, visited, currentPath);
+    
+    if (parentResult.hasCycle) {
+      result.hasCycle = true;
     }
+    
+    // Add found groupings from parent
+    parentResult.found.forEach((name) => {
+      if (!result.found.includes(name)) {
+        result.found.push(name);
+      }
+    });
   }
 
-  return "";
+  // Remove from current path when backtracking
+  currentPath.delete(element.id);
+
+  return result;
+}
+
+/**
+ * Finds all domains for an element by traversing aggregation/composition relationships
+ * @param {Object} element - The Archi element
+ * @returns {String} Comma-separated domain names, "cycle" if cycle detected, or empty string if none found
+ */
+function findDomain(element) {
+  const visited = new Set();
+  const currentPath = new Set();
+  const result = findAllGroupings(element, "Domäne", visited, currentPath);
+  
+  if (result.hasCycle) {
+    return "cycle";
+  }
+  
+  if (result.found.length === 0) {
+    return "";
+  }
+  
+  return result.found.join(", ");
+}
+
+/**
+ * Finds all Fachbereich for an element by traversing aggregation/composition relationships
+ * @param {Object} element - The Archi element
+ * @returns {String} Comma-separated Fachbereich names, "cycle" if cycle detected, or empty string if none found
+ */
+function findFachbereich(element) {
+  const visited = new Set();
+  const currentPath = new Set();
+  const result = findAllGroupings(element, "Fachbereich", visited, currentPath);
+  
+  if (result.hasCycle) {
+    return "cycle";
+  }
+  
+  if (result.found.length === 0) {
+    return "";
+  }
+  
+  return result.found.join(", ");
 }
 
 /**
@@ -81,5 +146,6 @@ function extractElements(model) {
 
 module.exports = {
   findDomain,
+  findFachbereich,
   extractElements,
 };

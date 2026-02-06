@@ -3,14 +3,13 @@ const webpack = require("webpack");
 
 module.exports = {
   mode: "production",
-  entry: "./src/main/comatrix.js",
+  entry: {
+    "comatrix-bundled": "./src/main/comatrix.js",
+    "applist-bundled": "./src/main/applist.js",
+  },
   output: {
     path: path.resolve(__dirname, "dist"),
-    filename: "comatrix-bundled.ajs",
-    library: {
-      type: "var",
-      name: "ComatrixLib",
-    },
+    filename: "[name].ajs",
   },
   target: "web",
   optimization: {
