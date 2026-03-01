@@ -32,6 +32,11 @@ jobs:
       - name: Build bundled script
         run: npm run build
       
+      - name: Publish to npm
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      
       - name: Configure Git
         run: |
           git config --global user.name "GitHub Action"
@@ -67,8 +72,3 @@ jobs:
             git commit -m "Release: Update bundled script from ${{ github.sha }}"
             git push origin release
           fi
-      
-      - name: Publish to npm
-        run: npm publish --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

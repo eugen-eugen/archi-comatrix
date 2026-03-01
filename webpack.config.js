@@ -6,6 +6,7 @@ module.exports = {
   entry: {
     "comatrix-bundled": "./src/main/comatrix.js",
     "applist-bundled": "./src/main/applist.js",
+    "tgf-bundled": "./src/main/tgf.js",
   },
   output: {
     path: path.resolve(__dirname, "dist"),
