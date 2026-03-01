@@ -2287,9 +2287,7 @@ function findAllGroupings(element, targetSpecialization, visited, currentPath) {
   currentPath.add(element.id);
 
   // Find incoming aggregation or composition relationships
-  const incomingRels = $(element)
-    .inRels("aggregation-relationship")
-    .add($(element).inRels("composition-relationship"));
+  const incomingRels = $(element).inRels("aggregation-relationship").add($(element).inRels("composition-relationship"));
 
   // Traverse up the hierarchy
   for (let i = 0; i < incomingRels.length; i++) {
@@ -2302,12 +2300,7 @@ function findAllGroupings(element, targetSpecialization, visited, currentPath) {
     }
 
     // Recursively search in parent
-    const parentResult = findAllGroupings(
-      parent,
-      targetSpecialization,
-      visited,
-      currentPath,
-    );
+    const parentResult = findAllGroupings(parent, targetSpecialization, visited, currentPath);
 
     if (parentResult.hasCycle) {
       result.hasCycle = true;
@@ -2381,25 +2374,26 @@ function extractElements(model) {
   $(model)
     .find("triggering-relationship")
     .each((relationship) => {
-      if (relationship.name && relationship.name.startsWith("NST_")) {
+      if (true) {
         // Get the Schnittstelle property values, can be multiply with same key
         const schnittstellen = relationship.prop("Schnittstelle", true) || "";
+        if (schnittstellen) {
+          // Find domains for source and target
+          const sourceDomain = findDomain(relationship.source);
 
-        // Find domains for source and target
-        const sourceDomain = findDomain(relationship.source);
-
-        const targetDomain = findDomain(relationship.target);
-        schnittstellen.forEach((schnittstelle) => {
-          relationships.push({
-            id: relationship.id,
-            name: relationship.name,
-            source: relationship.source,
-            target: relationship.target,
-            schnittstelle: schnittstelle,
-            sourceDomain: sourceDomain,
-            targetDomain: targetDomain,
+          const targetDomain = findDomain(relationship.target);
+          schnittstellen.forEach((schnittstelle) => {
+            relationships.push({
+              id: relationship.id,
+              name: relationship.name,
+              source: relationship.source,
+              target: relationship.target,
+              schnittstelle: schnittstelle,
+              sourceDomain: sourceDomain,
+              targetDomain: targetDomain,
+            });
           });
-        });
+        }
       }
     });
 
