@@ -25,6 +25,9 @@
   ],
   "author": "jemo",
   "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
   "dependencies": {
     "path-browserify": "^1.0.1",
     "xlsx-js-style": "^1.2.0"
