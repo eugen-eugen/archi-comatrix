@@ -34,7 +34,7 @@ jobs:
         run: npm run build
       
       - name: Publish to npm
-        run: npm publish --provenance --access public
+        run: npm publish 
       
       - name: Configure Git
         run: |
