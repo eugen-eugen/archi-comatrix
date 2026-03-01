@@ -1,19 +1,29 @@
 {
-  "name": "comatrix",
+  "name": "@jemo/comatrix",
   "version": "1.0.0",
   "description": "Archi script to export model elements to Excel matrix",
-  "main": "comatrix.ajs",
+  "main": "dist/comatrix-bundled.ajs",
+  "files": [
+    "dist/**/*.ajs",
+    "dist/README.md"
+  ],
   "scripts": {
     "build": "webpack",
-    "test": "node tests/testComatrix.js"
+    "test": "node tests/testComatrix.js",
+    "prepublishOnly": "npm run build"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jemo/comatrix.git"
   },
   "keywords": [
     "archi",
     "archimate",
     "excel",
-    "export"
+    "export",
+    "jArchi"
   ],
-  "author": "",
+  "author": "jemo",
   "license": "MIT",
   "dependencies": {
     "path-browserify": "^1.0.1",

@@ -111,6 +111,33 @@ This generates both:
 
 Both include xlsx-js-style and all dependencies.
 
+## Publishing to npm
+
+This package is automatically published to npm under `@jemo/comatrix` when changes are pushed to the main branch.
+
+### Automatic Publishing (via GitHub Actions)
+
+The `.github/workflows/build-release.yml` workflow automatically:
+1. Builds the bundled scripts
+2. Deploys to the `release` branch
+3. Publishes to npm with public access
+
+**Required Setup:**
+1. Create an npm access token at https://www.npmjs.com/settings/[username]/tokens
+2. Add the token as a GitHub repository secret named `NPM_TOKEN`:
+   - Go to repository Settings > Secrets and variables > Actions
+   - Add new repository secret: `NPM_TOKEN`
+
+### Manual Publishing
+
+To publish manually:
+```bash
+npm run build
+npm publish --access public
+```
+
+Note: Requires npm authentication and appropriate permissions for the `@jemo` scope.
+
 ## Project Structure
 
 ```
