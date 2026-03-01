@@ -111,55 +111,68 @@ This generates both:
 
 Both include xlsx-js-style and all dependencies.
 
-## Publishing to npm
+## Publishing to Docker Hub
 
-This package is automatically published to npm under `@jemo/archi-comatrix` when changes are pushed to the main branch.
-
-### Initial Setup (First-Time Only)
-
-Before automated publishing can work, you need to publish the package manually once:
-
-```bash
-npm login
-npm run build
-npm publish --access public
-```
-
-This creates the package on npmjs.com and establishes your ownership.
-
-### Configuring Trusted Publisher
-
-After the first manual publish, set up automated publishing:
-
-1. Go to https://www.npmjs.com/package/@jemo/archi-comatrix
-2. Navigate to Settings → Publishing Access
-3. Click "Add a trusted publisher"
-4. Configure with these settings:
-   - **Provider**: GitHub Actions
-   - **Owner**: jemo (your GitHub username/org)
-   - **Repository**: comatrix (your repository name)
-   - **Workflow**: build-release.yml
-   - **Environment**: (leave blank)
-5. Save the configuration
+This package is automatically published to Docker Hub as `jemojemo/archi-scripts` when changes are pushed to the main branch.
 
 ### Automatic Publishing (via GitHub Actions)
 
-Once trusted publishing is configured, the `.github/workflows/build-release.yml` workflow automatically:
+The `.github/workflows/build-release.yml` workflow automatically:
 1. Builds the bundled scripts
-2. Publishes to npm with provenance attestations using OIDC authentication
-3. Deploys to the `release` branch
+2. Creates a Docker image with scripts in `/archi-scripts`
+3. Pushes to Docker Hub with version tag and `latest` tag
+4. Deploys to the `release` branch on GitHub
 
-No npm access tokens or secrets are needed - authentication happens automatically via OIDC.
+**Required Setup:**
 
-### Subsequent Manual Publishing
+1. Create a Docker Hub access token at https://hub.docker.com/settings/security
+2. Add GitHub repository secrets:
+   - Go to repository Settings > Secrets and variables > Actions
+   - Add secret `DOCKERHUB_USERNAME` with your Docker Hub username (e.g., `jemojemo`)
+   - Add secret `DOCKERHUB_TOKEN` with the access token from step 1
 
-To publish manually after setup:
+### Using the Docker Image
+
+Pull the latest version:
 ```bash
-npm run build
-npm publish --provenance --access public
+docker pull jemojemo/archi-scripts:latest
 ```
 
-Note: Manual publishing requires npm authentication (`npm login`) and appropriate permissions for the `@jemo` scope.
+Pull a specific version:
+```bash
+docker pull jemojemo/archi-scripts:1.0.0
+```
+
+Extract scripts from the image:
+```bash
+docker create --name temp jemojemo/archi-scripts:latest
+docker cp temp:/archi-scripts ./archi-scripts
+docker rm temp
+```
+
+The `/archi-scripts` directory in the image contains:
+- `comatrix-bundled.ajs` - Connectivity matrix script
+- `applist-bundled.ajs` - Application list script
+- `tgf-bundled.ajs` - TGF export script
+- `README.md` - Documentation
+
+### Manual Publishing
+
+To build and test the Docker image locally:
+```bash
+npm run build
+docker build -t jemojemo/archi-scripts:test .
+docker run --rm jemojemo/archi-scripts:test ls /archi-scripts
+```
+
+To publish manually:
+```bash
+docker login
+docker build -t jemojemo/archi-scripts:1.0.0 .
+docker tag jemojemo/archi-scripts:1.0.0 jemojemo/archi-scripts:latest
+docker push jemojemo/archi-scripts:1.0.0
+docker push jemojemo/archi-scripts:latest
+```
 
 ## Project Structure
 
