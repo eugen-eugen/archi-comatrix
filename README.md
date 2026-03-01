@@ -115,28 +115,51 @@ Both include xlsx-js-style and all dependencies.
 
 This package is automatically published to npm under `@jemo/comatrix` when changes are pushed to the main branch.
 
-### Automatic Publishing (via GitHub Actions)
+### Initial Setup (First-Time Only)
 
-The `.github/workflows/build-release.yml` workflow automatically:
-1. Builds the bundled scripts
-2. Deploys to the `release` branch
-3. Publishes to npm with public access
+Before automated publishing can work, you need to publish the package manually once:
 
-**Required Setup:**
-1. Create an npm access token at https://www.npmjs.com/settings/[username]/tokens
-2. Add the token as a GitHub repository secret named `NPM_TOKEN`:
-   - Go to repository Settings > Secrets and variables > Actions
-   - Add new repository secret: `NPM_TOKEN`
-
-### Manual Publishing
-
-To publish manually:
 ```bash
+npm login
 npm run build
 npm publish --access public
 ```
 
-Note: Requires npm authentication and appropriate permissions for the `@jemo` scope.
+This creates the package on npmjs.com and establishes your ownership.
+
+### Configuring Trusted Publisher
+
+After the first manual publish, set up automated publishing:
+
+1. Go to https://www.npmjs.com/package/@jemo/comatrix
+2. Navigate to Settings → Publishing Access
+3. Click "Add a trusted publisher"
+4. Configure with these settings:
+   - **Provider**: GitHub Actions
+   - **Owner**: jemo (your GitHub username/org)
+   - **Repository**: comatrix (your repository name)
+   - **Workflow**: build-release.yml
+   - **Environment**: (leave blank)
+5. Save the configuration
+
+### Automatic Publishing (via GitHub Actions)
+
+Once trusted publishing is configured, the `.github/workflows/build-release.yml` workflow automatically:
+1. Builds the bundled scripts
+2. Publishes to npm with provenance attestations using OIDC authentication
+3. Deploys to the `release` branch
+
+No npm access tokens or secrets are needed - authentication happens automatically via OIDC.
+
+### Subsequent Manual Publishing
+
+To publish manually after setup:
+```bash
+npm run build
+npm publish --provenance --access public
+```
+
+Note: Manual publishing requires npm authentication (`npm login`) and appropriate permissions for the `@jemo` scope.
 
 ## Project Structure
 
