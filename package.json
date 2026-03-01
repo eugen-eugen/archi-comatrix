@@ -1,5 +1,5 @@
 {
-  "name": "@jemo/comatrix",
+  "name": "@jemo/archi-comatrix",
   "version": "1.0.0",
   "description": "Archi script to export model elements to Excel matrix",
   "main": "dist/comatrix-bundled.ajs",

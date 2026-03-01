@@ -113,7 +113,7 @@ Both include xlsx-js-style and all dependencies.
 
 ## Publishing to npm
 
-This package is automatically published to npm under `@jemo/comatrix` when changes are pushed to the main branch.
+This package is automatically published to npm under `@jemo/archi-comatrix` when changes are pushed to the main branch.
 
 ### Initial Setup (First-Time Only)
 
@@ -131,7 +131,7 @@ This creates the package on npmjs.com and establishes your ownership.
 
 After the first manual publish, set up automated publishing:
 
-1. Go to https://www.npmjs.com/package/@jemo/comatrix
+1. Go to https://www.npmjs.com/package/@jemo/archi-comatrix
 2. Navigate to Settings → Publishing Access
 3. Click "Add a trusted publisher"
 4. Configure with these settings:
