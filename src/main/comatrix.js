@@ -77,9 +77,7 @@ function buildComatrix(currentModel) {
     }
   });
 
-  console.log(
-    `Found ${aElements.size} target elements (A) and ${bElementsMap.size} source elements (B)`,
-  );
+  console.log(`Found ${aElements.size} target elements (A) and ${bElementsMap.size} source elements (B)`);
   console.log("Step 2: Sorting elements...");
 
   // Sort A elements by domain (empty domains last), then by element name
@@ -126,11 +124,7 @@ function merge(comatrixBase, comatrixCurrent) {
       const existingData = aElements.get(key);
 
       // Update domain: use current if baseline is empty or differs
-      if (
-        !existingData.domain ||
-        existingData.domain === "" ||
-        existingData.domain !== value.domain
-      ) {
+      if (!existingData.domain || existingData.domain === "" || existingData.domain !== value.domain) {
         existingData.domain = value.domain;
       }
 
@@ -139,9 +133,7 @@ function merge(comatrixBase, comatrixCurrent) {
           existingData.schnittstellenMap.set(schnittstelle, new Set(bSet));
         } else {
           // Merge B elements for this Schnittstelle
-          bSet.forEach((b) =>
-            existingData.schnittstellenMap.get(schnittstelle).add(b),
-          );
+          bSet.forEach((b) => existingData.schnittstellenMap.get(schnittstelle).add(b));
         }
       });
     } else {
@@ -166,11 +158,7 @@ function merge(comatrixBase, comatrixCurrent) {
     if (bElementsMap.has(name)) {
       const baselineData = bElementsMap.get(name);
       // Use current domain if baseline is empty or differs
-      if (
-        !baselineData.domain ||
-        baselineData.domain === "" ||
-        baselineData.domain !== data.domain
-      ) {
+      if (!baselineData.domain || baselineData.domain === "" || baselineData.domain !== data.domain) {
         bElementsMap.set(name, { domain: data.domain });
       }
     } else {
@@ -184,10 +172,7 @@ function merge(comatrixBase, comatrixCurrent) {
   const sortedBElements = sortElementsByDomain(bElementsMap);
 
   // Merge relationships
-  const relationships = [
-    ...comatrixBase.relationships,
-    ...comatrixCurrent.relationships,
-  ];
+  const relationships = [...comatrixBase.relationships, ...comatrixCurrent.relationships];
 
   console.log(
     `Merged matrix: ${aElements.size} A-elements, ${bElementsMap.size} B-elements, ${relationships.length} relationships`,
@@ -212,9 +197,7 @@ function runComatrix() {
 
   // Check if a model is selected
   if (!model) {
-    console.log(
-      "ERROR: No model is selected. Please open or create a model first.",
-    );
+    console.log("ERROR: No model is selected. Please open or create a model first.");
     return;
   }
 
@@ -241,7 +224,7 @@ function runComatrix() {
   if (baselineModelPath) {
     // Parameter provided - load model from path
     console.log(`Loading baseline model from parameter: "${baselineModelPath}"`);
-    
+
     try {
       baselineModel = $.model.load(baselineModelPath);
       if (baselineModel) {
@@ -318,20 +301,14 @@ function runComatrix() {
       // Build matrices for both models
       console.log("Building matrix for baseline model...");
       comatrixBase = buildComatrix(baselineModel);
-      console.log(
-        `Baseline: ${comatrixBase.relationships.length} relationships\n`,
-      );
+      console.log(`Baseline: ${comatrixBase.relationships.length} relationships\n`);
 
       console.log("Building matrix for current model...");
       comatrixCurrent = buildComatrix(model);
-      console.log(
-        `Current: ${comatrixCurrent.relationships.length} relationships\n`,
-      );
+      console.log(`Current: ${comatrixCurrent.relationships.length} relationships\n`);
 
       if (comatrixCurrent.relationships.length === 0) {
-        console.log(
-          "⚠ No NST_* triggering relationships found in the current model.",
-        );
+        console.log("⚠ No NST_* triggering relationships found in the current model.");
         return;
       }
 
@@ -343,9 +320,7 @@ function runComatrix() {
       comatrix = buildComatrix(model);
 
       if (comatrix.relationships.length === 0) {
-        console.log(
-          "⚠ No NST_* triggering relationships found in the selected model.",
-        );
+        console.log("⚠ No NST_* triggering relationships found in the selected model.");
         return;
       }
     }
@@ -355,9 +330,7 @@ function runComatrix() {
 
     console.log("\n=== Export Complete ===");
     console.log(`Matrix file saved to: ${outputPath}`);
-    console.log(
-      `Total triggering relationships processed: ${comatrix.relationships.length}`,
-    );
+    console.log(`Total triggering relationships processed: ${comatrix.relationships.length}`);
 
     // Open the file location in file browser
     try {
