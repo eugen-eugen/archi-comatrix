@@ -87,9 +87,7 @@ function runTGF() {
     const model = selection.filter("archimate-model").first();
 
     if (!model) {
-      console.log(
-        "⚠ Please select an ArchiMate model in the model tree before running this script.",
-      );
+      console.log("⚠ Please select an ArchiMate model in the model tree before running this script.");
       return;
     }
 
