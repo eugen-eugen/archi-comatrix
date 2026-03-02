@@ -7,6 +7,7 @@ const XLSX = require("xlsx-js-style");
 const path = require("path");
 const output2Excel = require("./output2Excel");
 const { findDomain, extractElements } = require("./model");
+const { getParameter } = require("./params");
 
 /**
  * Sorts elements by domain (empty domains last), then by element name
@@ -230,11 +231,34 @@ function runComatrix() {
   console.log("");
 
   // Check for baseline model
+  // Priority 1: Command line parameter --baselineModel
+  // Priority 2: Model property 'baseline'
+  const baselineModelPath = getParameter("baselineModel");
   const baselineProperty = model.prop("baseline");
   let baselineModel = null;
   let compareMode = false;
 
-  if (!baselineProperty || baselineProperty.trim() === "") {
+  if (baselineModelPath) {
+    // Parameter provided - load model from path
+    console.log(`Loading baseline model from parameter: "${baselineModelPath}"`);
+    
+    try {
+      baselineModel = $.model.load(baselineModelPath);
+      if (baselineModel) {
+        console.log(`✓ Baseline model loaded: ${baselineModel.name}`);
+        console.log(`  Baseline path: ${baselineModelPath}`);
+        console.log("Running in COMPARE MODE (parameter-based).\n");
+        compareMode = true;
+      } else {
+        console.log(`✗ Failed to load baseline model from: ${baselineModelPath}`);
+        console.log("Running in single model mode.\n");
+      }
+    } catch (error) {
+      console.log(`✗ Error loading baseline model: ${error.message}`);
+      console.log("Running in single model mode.\n");
+    }
+  } else if (!baselineProperty || baselineProperty.trim() === "") {
+    console.log("ℹ No --baselineModel parameter provided.");
     console.log("ℹ Property 'baseline' is not set in the selected model.");
     console.log("Running in single model mode.\n");
   } else {
@@ -246,7 +270,7 @@ function runComatrix() {
     if (baselineModel) {
       console.log(`✓ Baseline model found: ${baselineModel.name}`);
       console.log(`  Baseline path: ${baselineModel.path || "(not saved)"}`);
-      console.log("Running in COMPARE MODE.\n");
+      console.log("Running in COMPARE MODE (property-based).\n");
       compareMode = true;
     } else {
       console.log(`✗ Baseline model "${baselineProperty}" is not opened.`);

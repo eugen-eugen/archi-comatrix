@@ -70,15 +70,36 @@ npm install
 For development, you can work directly with the source files in `src/main/` and rebuild using webpack.
 
 #### Baseline Comparison
-To compare a current model against a baseline:
+To compare a current model against a baseline, you have two options:
+
+**Option 1: Using Command-Line Parameter (Recommended)**
+Run the script with the `--baselineModel` parameter specifying the path to the baseline model:
+
+```bash
+# From Archi Scripts menu (if configured)
+# Or via jArchi CLI:
+--baselineModel /path/to/baseline-model.archimate
+```
+
+Example:
+```bash
+--baselineModel /Users/molday/Documents/Archi/model-repository/project/.git/temp.archimate
+```
+
+**Option 2: Using Model Property**
 1. Add a property "baseline" to your model with the name of the baseline model
 2. Ensure both models are opened in Archi
 3. Run the script - it will automatically detect and compare against the baseline
-4. The Excel output highlights differences:
-   - **Green (RGB 155/187/89)**: New elements or connections
-   - **Yellow/Orange (RGB 255/192/0 or 255/255/0)**: Changed connections
-   - **Red (RGB 192/80/77)**: Removed elements or connections
-5. Legend is displayed in cells A1-C1 for easy reference
+
+**Note:** If the `--baselineModel` parameter is provided, it takes precedence over the model property.
+
+**Output:**
+The Excel output highlights differences:
+- **Green (RGB 155/187/89)**: New elements or connections
+- **Yellow/Orange (RGB 255/192/0 or 255/255/0)**: Changed connections
+- **Red (RGB 192/80/77)**: Removed elements or connections
+
+Legend is displayed in cells A1-C1 for easy reference.
 
 ### Application List
 
@@ -278,11 +299,18 @@ The codebase is organized into several modules:
    - Cell coloring based on comparison results
    - Excel file writing using Java FileOutputStream
 
+5. **params.js**: Command-line parameter handling
+   - `getParameter(paramName)`: Gets the value of a named parameter (e.g., `--baselineModel`)
+   - `hasParameter(paramName)`: Checks if a parameter exists
+   - `getAllParameters()`: Returns all parameters as an object
+   - Supports standard command-line argument format: `--paramName value`
+
 To add more features:
 1. Modify relationship detection in `buildComatrix()` or extend `extractElements()`
 2. Enhance comparison logic in `output2Excel()` 
 3. Add new specializations or filtering in `applist.js`
 4. Extend domain detection logic in `model.js`
+5. Add new command-line parameters in `params.js` and use them in other modules
 
 ## Documentation
 
