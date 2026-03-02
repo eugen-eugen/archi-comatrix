@@ -1,6 +1,103 @@
 /******/ (() => { // webpackBootstrap
 /******/ 	var __webpack_modules__ = ({
 
+/***/ 124
+(module) {
+
+/**
+ * params.js
+ * Parameter handling utilities for jArchi scripts
+ * 
+ * Parameters can be passed to scripts using the --paramName format:
+ * Example: jArchi.script("comatrix.ajs", "--baselineModel", "/path/to/model.archimate")
+ */
+
+/**
+ * Gets the value of a named parameter from command line arguments
+ * @param {string} paramName - The parameter name (without -- prefix)
+ * @returns {string|null} The parameter value if found, null otherwise
+ * 
+ * @example
+ * // If script is called with: --baselineModel /path/to/model.archimate
+ * const path = getParameter("baselineModel");
+ * // Returns: "/path/to/model.archimate"
+ */
+function getParameter(paramName) {
+  const argv = $.process.argv;
+  
+  if (!argv || argv.length === 0) {
+    return null;
+  }
+
+  const paramFlag = `--${paramName}`;
+  
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i] === paramFlag && i + 1 < argv.length) {
+      return argv[i + 1];
+    }
+  }
+  
+  return null;
+}
+
+/**
+ * Checks if a parameter exists in command line arguments
+ * @param {string} paramName - The parameter name (without -- prefix)
+ * @returns {boolean} True if parameter exists, false otherwise
+ */
+function hasParameter(paramName) {
+  const argv = $.process.argv;
+  
+  if (!argv || argv.length === 0) {
+    return false;
+  }
+
+  const paramFlag = `--${paramName}`;
+  return argv.includes(paramFlag);
+}
+
+/**
+ * Gets all parameters as an object
+ * @returns {Object} Object with parameter names as keys and their values
+ * 
+ * @example
+ * // If script is called with: --baselineModel /path/to/model.archimate --verbose
+ * const params = getAllParameters();
+ * // Returns: { baselineModel: "/path/to/model.archimate", verbose: null }
+ */
+function getAllParameters() {
+  const params = {};
+  const argv = $.process.argv;
+  
+  if (!argv || argv.length === 0) {
+    return params;
+  }
+
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i].startsWith('--')) {
+      const paramName = argv[i].substring(2);
+      const paramValue = (i + 1 < argv.length && !argv[i + 1].startsWith('--')) 
+        ? argv[i + 1] 
+        : null;
+      params[paramName] = paramValue;
+      if (paramValue !== null) {
+        i++; // Skip the value in next iteration
+      }
+    }
+  }
+  
+  return params;
+}
+
+module.exports = {
+  getParameter,
+  hasParameter,
+  getAllParameters
+};
+
+
+/***/ },
+
 /***/ 218
 (module, __unused_webpack_exports, __webpack_require__) {
 
@@ -2990,6 +3087,7 @@ const XLSX = __webpack_require__(402);
 const path = __webpack_require__(975);
 const output2Excel = __webpack_require__(218);
 const { findDomain, extractElements } = __webpack_require__(593);
+const { getParameter } = __webpack_require__(124);
 
 /**
  * Sorts elements by domain (empty domains last), then by element name
@@ -3213,11 +3311,34 @@ function runComatrix() {
   console.log("");
 
   // Check for baseline model
+  // Priority 1: Command line parameter --baselineModel
+  // Priority 2: Model property 'baseline'
+  const baselineModelPath = getParameter("baselineModel");
   const baselineProperty = model.prop("baseline");
   let baselineModel = null;
   let compareMode = false;
 
-  if (!baselineProperty || baselineProperty.trim() === "") {
+  if (baselineModelPath) {
+    // Parameter provided - load model from path
+    console.log(`Loading baseline model from parameter: "${baselineModelPath}"`);
+    
+    try {
+      baselineModel = $.model.load(baselineModelPath);
+      if (baselineModel) {
+        console.log(`✓ Baseline model loaded: ${baselineModel.name}`);
+        console.log(`  Baseline path: ${baselineModelPath}`);
+        console.log("Running in COMPARE MODE (parameter-based).\n");
+        compareMode = true;
+      } else {
+        console.log(`✗ Failed to load baseline model from: ${baselineModelPath}`);
+        console.log("Running in single model mode.\n");
+      }
+    } catch (error) {
+      console.log(`✗ Error loading baseline model: ${error.message}`);
+      console.log("Running in single model mode.\n");
+    }
+  } else if (!baselineProperty || baselineProperty.trim() === "") {
+    console.log("ℹ No --baselineModel parameter provided.");
     console.log("ℹ Property 'baseline' is not set in the selected model.");
     console.log("Running in single model mode.\n");
   } else {
@@ -3229,7 +3350,7 @@ function runComatrix() {
     if (baselineModel) {
       console.log(`✓ Baseline model found: ${baselineModel.name}`);
       console.log(`  Baseline path: ${baselineModel.path || "(not saved)"}`);
-      console.log("Running in COMPARE MODE.\n");
+      console.log("Running in COMPARE MODE (property-based).\n");
       compareMode = true;
     } else {
       console.log(`✗ Baseline model "${baselineProperty}" is not opened.`);
