@@ -130,9 +130,7 @@ function runAppList() {
 
   // Check if a model is selected
   if (!model) {
-    console.log(
-      "ERROR: No model is selected. Please open or create a model first.",
-    );
+    console.log("ERROR: No model is selected. Please open or create a model first.");
     return;
   }
 
@@ -146,15 +144,18 @@ function runAppList() {
     );
 
     const allAppComponents = $("application-component");
-    console.log(
-      `Total application components found: ${allAppComponents.length}`,
-    );
+    console.log(`Total application components found: ${allAppComponents.length}`);
 
     const applications = [];
     const allowedSpecializations = [
       "Geschäftsanwendung",
       "Register",
       "Querschnittsanwendung",
+      "QA",
+      "QK",
+      "GA",
+      "GK",
+      "GK-GUI",
     ];
 
     allAppComponents.each((appComponent) => {
@@ -174,25 +175,15 @@ function runAppList() {
     console.log(`Found ${applications.length} applications\n`);
 
     if (applications.length === 0) {
-      console.log(
-        "⚠ No application components with the specified specializations found.",
-      );
+      console.log("⚠ No application components with the specified specializations found.");
       return;
     }
 
     // Sort by fachbereich, then domain, then typ, then name
     applications.sort((a, b) => {
       // Empty Fachbereich go to the end
-      if (
-        a.fachbereich === "(kein Fachbereich)" &&
-        b.fachbereich !== "(kein Fachbereich)"
-      )
-        return 1;
-      if (
-        a.fachbereich !== "(kein Fachbereich)" &&
-        b.fachbereich === "(kein Fachbereich)"
-      )
-        return -1;
+      if (a.fachbereich === "(kein Fachbereich)" && b.fachbereich !== "(kein Fachbereich)") return 1;
+      if (a.fachbereich !== "(kein Fachbereich)" && b.fachbereich === "(kein Fachbereich)") return -1;
 
       // Compare Fachbereich
       if (a.fachbereich !== b.fachbereich) {
@@ -200,10 +191,8 @@ function runAppList() {
       }
 
       // Empty domains go to the end
-      if (a.domain === "(keine Domäne)" && b.domain !== "(keine Domäne)")
-        return 1;
-      if (a.domain !== "(keine Domäne)" && b.domain === "(keine Domäne)")
-        return -1;
+      if (a.domain === "(keine Domäne)" && b.domain !== "(keine Domäne)") return 1;
+      if (a.domain !== "(keine Domäne)" && b.domain === "(keine Domäne)") return -1;
 
       // Compare domains
       if (a.domain !== b.domain) {
@@ -256,13 +245,9 @@ function runAppList() {
     applications.forEach((app) => {
       countByType[app.typ] = (countByType[app.typ] || 0) + 1;
     });
-    console.log(
-      `  - Geschäftsanwendung: ${countByType["Geschäftsanwendung"] || 0}`,
-    );
+    console.log(`  - Geschäftsanwendung: ${countByType["Geschäftsanwendung"] || 0}`);
     console.log(`  - Register: ${countByType["Register"] || 0}`);
-    console.log(
-      `  - Querschnittsanwendung: ${countByType["Querschnittsanwendung"] || 0}`,
-    );
+    console.log(`  - Querschnittsanwendung: ${countByType["Querschnittsanwendung"] || 0}`);
 
     // Open the file location in file browser
     try {
