@@ -23,7 +23,10 @@ Comatrix is an Archi JavaScript extension that provides two main tools:
 - **Domain Detection**: Automatically groups elements by domain using aggregation/composition relationships
 - **Relationship Types**: Focuses on serving relationships and related ArchiMate connections
 - **Visual Styling**: Color-coded cells with proper borders, fonts, and text rotation
-- **Excel Features**: Frozen panes (first 4 columns and 2 rows), auto-fit column widths
+- **Excel Features**: 
+  - Frozen panes (first 4 columns and 2 rows)
+  - Auto-fit column widths
+  - Row grouping by Domain and Application (collapsible/expandable groups)
 - **Intern/Extern Classification**: Automatically detects whether connections are internal or external based on domains
 
 ### Application List (applist)
@@ -64,7 +67,7 @@ npm install
 3. The Excel file `comatrix.xlsx` will be created in the same directory as your model
 4. The file explorer will automatically open showing the output file
 
-**No npm install required!** The bundled version includes all dependencies in a single ~932 KiB file.
+**No npm install required!** The bundled version includes all dependencies in a single ~937 KiB file.
 
 #### Option 2: Development Version
 For development, you can work directly with the source files in `src/main/` and rebuild using webpack.
@@ -127,7 +130,7 @@ npm run build
 ```
 
 This generates both:
-- `dist/comatrix-bundled.ajs` - Connectivity matrix script (~932 KiB)
+- `dist/comatrix-bundled.ajs` - Connectivity matrix script (~937 KiB)
 - `dist/applist-bundled.ajs` - Application list script (~906 KiB)
 
 Both include xlsx-js-style and all dependencies.
@@ -237,6 +240,11 @@ The generated Excel file contains one worksheet named "Matrix" with:
   - Column C: Angebotene Schnittstelle (Offered Interface)
   - Column D: intern/extern classification
   - Columns E+: B-elements with "x" marking connections
+
+#### Excel Features
+- **Frozen panes**: First 4 columns (A-D) and first 2 rows are frozen for easy navigation
+- **Auto-fit columns**: Column widths automatically adjust to content
+- **Row grouping**: Rows with the same Domain and Application are grouped together and can be collapsed/expanded using Excel's outline feature (click the [-]/[+] buttons on the left side)
 
 #### Color Coding
 - **Green fill**: New elements or connections (not in baseline)

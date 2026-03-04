@@ -4,6 +4,14 @@
  */
 
 const XLSX = require("xlsx-js-style");
+const {
+  insertGroupSeparators,
+  isSeparatorRow,
+  applyRowGrouping,
+  insertColumnSeparators,
+  isSeparatorColumn,
+  applyColumnGrouping,
+} = require("./groupingExcel");
 
 // Color constants for Excel styling
 const COLOR_ADDED = "9BBB59"; // Green (RGB 155/187/89) - New elements
@@ -23,8 +31,7 @@ const COLOR_TEXT_WHITE = "FFFFFF"; // White - Text on red background
  * @param {Object} comatrixCurrent - Optional current matrix for comparison (from buildComatrix)
  */
 function output2Excel(comatrix, outputPath, comatrixBase, comatrixCurrent) {
-  const { aElements, bElementsMap, sortedAElements, sortedBElements } =
-    comatrix;
+  const { aElements, bElementsMap, sortedAElements, sortedBElements } = comatrix;
 
   // Build baseline and current sets if provided for comparison
   let baselineSets = null;
@@ -87,12 +94,8 @@ function output2Excel(comatrix, outputPath, comatrixBase, comatrixCurrent) {
       if (baselineRowCombinations.has(combo)) {
         const [aName, schnittstelle] = combo.split("|");
 
-        const baseBSet = comatrixBase.aElements
-          .get(aName)
-          .schnittstellenMap.get(schnittstelle);
-        const currentBSet = comatrixCurrent.aElements
-          .get(aName)
-          .schnittstellenMap.get(schnittstelle);
+        const baseBSet = comatrixBase.aElements.get(aName).schnittstellenMap.get(schnittstelle);
+        const currentBSet = comatrixCurrent.aElements.get(aName).schnittstellenMap.get(schnittstelle);
 
         // Check if the B-elements (connections) are different
         let hasChanges = false;
@@ -134,9 +137,7 @@ function output2Excel(comatrix, outputPath, comatrixBase, comatrixCurrent) {
             if (comatrixCurrent.aElements.has(aName)) {
               const currentData = comatrixCurrent.aElements.get(aName);
               if (currentData.schnittstellenMap.has(schnittstelle)) {
-                inCurrentRow = currentData.schnittstellenMap
-                  .get(schnittstelle)
-                  .has(bName);
+                inCurrentRow = currentData.schnittstellenMap.get(schnittstelle).has(bName);
               }
             }
 
@@ -148,26 +149,22 @@ function output2Excel(comatrix, outputPath, comatrixBase, comatrixCurrent) {
 
         // Also check combinations only in current
         comatrixCurrent.aElements.forEach((currentData, aName) => {
-          currentData.schnittstellenMap.forEach(
-            (currentBSet, schnittstelle) => {
-              if (currentBSet.has(bName)) {
-                // Check if this combination existed in baseline
-                let inBaselineRow = false;
-                if (comatrixBase.aElements.has(aName)) {
-                  const baseData = comatrixBase.aElements.get(aName);
-                  if (baseData.schnittstellenMap.has(schnittstelle)) {
-                    inBaselineRow = baseData.schnittstellenMap
-                      .get(schnittstelle)
-                      .has(bName);
-                  }
-                }
-
-                if (!inBaselineRow) {
-                  hasChanges = true;
+          currentData.schnittstellenMap.forEach((currentBSet, schnittstelle) => {
+            if (currentBSet.has(bName)) {
+              // Check if this combination existed in baseline
+              let inBaselineRow = false;
+              if (comatrixBase.aElements.has(aName)) {
+                const baseData = comatrixBase.aElements.get(aName);
+                if (baseData.schnittstellenMap.has(schnittstelle)) {
+                  inBaselineRow = baseData.schnittstellenMap.get(schnittstelle).has(bName);
                 }
               }
-            },
-          );
+
+              if (!inBaselineRow) {
+                hasChanges = true;
+              }
+            }
+          });
         });
 
         if (hasChanges) {
@@ -187,9 +184,7 @@ function output2Excel(comatrix, outputPath, comatrixBase, comatrixCurrent) {
     );
     console.log("New elements will be highlighted with green fill.");
     console.log("Removed elements will be highlighted with red fill.");
-    console.log(
-      "Elements with changed connections will be highlighted with orange fill.\n",
-    );
+    console.log("Elements with changed connections will be highlighted with orange fill.\n");
   }
 
   console.log("Step 3: Building matrix data...");
@@ -204,13 +199,7 @@ function output2Excel(comatrix, outputPath, comatrixBase, comatrixCurrent) {
   ];
 
   // Build header row (second row)
-  const headerRow = [
-    "Domäne",
-    "Anwendungssystem",
-    "Angebotene Schnittstelle",
-    "intern/extern",
-    ...sortedBElements,
-  ];
+  const headerRow = ["Domäne", "Anwendungssystem", "Angebotene Schnittstelle", "intern/extern", ...sortedBElements];
 
   // Build data rows
   const dataRows = [];
@@ -240,11 +229,7 @@ function output2Excel(comatrix, outputPath, comatrixBase, comatrixCurrent) {
       });
 
       // Determine intern/extern: if at least one connection is extern, mark as extern
-      const internExtern = hasConnectionWithoutDomain
-        ? "extern"
-        : hasConnectionWithDomain
-          ? "intern"
-          : "";
+      const internExtern = hasConnectionWithoutDomain ? "extern" : hasConnectionWithDomain ? "intern" : "";
 
       const row = [aDomain, aName, schnittstelle, internExtern];
 
@@ -257,28 +242,38 @@ function output2Excel(comatrix, outputPath, comatrixBase, comatrixCurrent) {
     });
   });
 
+  // Insert group separator rows
+  console.log(`Step 3.5: Inserting group separators into ${dataRows.length} rows...`);
+  const dataRowsWithSeparators = insertGroupSeparators(dataRows);
+  console.log(`Result: ${dataRowsWithSeparators.length} rows (including separators)`);
+
   // Combine domain row, header, and data
-  const data = [bDomainRow, headerRow, ...dataRows];
+  const data = [bDomainRow, headerRow, ...dataRowsWithSeparators];
+
+  // Insert column separators
+  console.log(`Step 3.6: Inserting column separators into ${data[0].length - 4} B-element columns...`);
+  const dataWithColumnSeparators = insertColumnSeparators(data);
+  console.log(`Result: ${dataWithColumnSeparators[0].length} total columns (including separators)`);
 
   console.log(
-    `Step 4: Creating worksheet with ${dataRows.length} rows and ${sortedBElements.length + 2} columns...`,
+    `Step 4: Creating worksheet with ${dataWithColumnSeparators.length - 2} data rows and ${dataWithColumnSeparators[0].length} columns...`,
   );
 
   // Create workbook and worksheet
   const workbook = XLSX.utils.book_new();
-  const worksheet = XLSX.utils.aoa_to_sheet(data);
+  const worksheet = XLSX.utils.aoa_to_sheet(dataWithColumnSeparators);
 
   // Calculate column widths based on content
   console.log("Step 4.5: Calculating auto-fit column widths...");
   const colWidths = [];
 
-  for (let col = 0; col < headerRow.length; col++) {
+  for (let col = 0; col < dataWithColumnSeparators[0].length; col++) {
     let maxWidth = 0;
 
     if (col < 4) {
       // For Domäne, Anwendungssystem, Angebotene Schnittstelle, and intern/extern columns, calculate based on content
-      for (let row = 0; row < data.length; row++) {
-        const cellValue = data[row][col];
+      for (let row = 0; row < dataWithColumnSeparators.length; row++) {
+        const cellValue = dataWithColumnSeparators[row][col];
         if (cellValue) {
           const cellLength = String(cellValue).length;
           maxWidth = Math.max(maxWidth, cellLength);
@@ -472,19 +467,49 @@ function output2Excel(comatrix, outputPath, comatrixBase, comatrixCurrent) {
     fill: { fgColor: { rgb: COLOR_REMOVED } },
   };
 
+  // Style for separator rows - bold with gray background
+  const separatorStyle = {
+    font: getFontStyle(COLOR_HEADER_GRAY, true),
+    alignment: { horizontal: "left" },
+    border: borderStyle,
+    fill: { fgColor: { rgb: COLOR_HEADER_GRAY } },
+  };
+
+  // Style for "x" marks in separator rows - bold, centered, gray background
+  const separatorStyleCentered = {
+    font: getFontStyle(COLOR_HEADER_GRAY, true),
+    alignment: { horizontal: "center" },
+    border: borderStyle,
+    fill: { fgColor: { rgb: COLOR_HEADER_GRAY } },
+  };
+
   // Apply base style to all cells first
-  for (let row = 0; row < data.length; row++) {
-    for (let col = 0; col < data[row].length; col++) {
+  for (let row = 0; row < dataWithColumnSeparators.length; row++) {
+    for (let col = 0; col < dataWithColumnSeparators[row].length; col++) {
       const cellRef = XLSX.utils.encode_cell({ r: row, c: col });
       if (!worksheet[cellRef]) {
         worksheet[cellRef] = { v: "" };
       }
       // Data rows (row 2+)
       if (row >= 2) {
-        const isIntern = data[row][3] === "intern"; // Check column D (intern/extern)
-        const cellValue = data[row][col];
-        const aElementName = data[row][1]; // Column B has A-element name (Anwendungssystem)
-        const schnittstelle = data[row][2]; // Column C has Schnittstelle
+        const schnittstelle = dataWithColumnSeparators[row][2]; // Column C has Schnittstelle
+        const isIntern = dataWithColumnSeparators[row][3] === "intern"; // Check column D (intern/extern)
+        const cellValue = dataWithColumnSeparators[row][col];
+        const aElementName = dataWithColumnSeparators[row][1]; // Column B has A-element name (Anwendungssystem)
+
+        // Check if this is a separator row (empty Schnittstelle)
+        const isSeparator = schnittstelle === "";
+
+        if (isSeparator) {
+          // Apply separator style, but use centered alignment for "x" marks
+          if (cellValue === "x") {
+            worksheet[cellRef].s = separatorStyleCentered;
+          } else {
+            worksheet[cellRef].s = separatorStyle;
+          }
+          continue; // Skip other styling logic for separator rows
+        }
+
         const rowCombo = `${aElementName}|${schnittstelle}`;
 
         // Check row combination status
@@ -504,36 +529,22 @@ function output2Excel(comatrix, outputPath, comatrixBase, comatrixCurrent) {
           // Columns A-D: same color for all cells in a row based on row combination status
           if (isNewRow) {
             // New row: all A-D cells green
-            worksheet[cellRef].s = isIntern
-              ? { ...dataStyleNewABold }
-              : { ...dataStyleNewA };
+            worksheet[cellRef].s = isIntern ? { ...dataStyleNewABold } : { ...dataStyleNewA };
           } else if (isChangedRow) {
             // Changed row: all A-D cells yellow
-            worksheet[cellRef].s = isIntern
-              ? { ...dataStyleChangedABold }
-              : { ...dataStyleChangedA };
+            worksheet[cellRef].s = isIntern ? { ...dataStyleChangedABold } : { ...dataStyleChangedA };
           } else if (isRemovedRow) {
             // Removed row: all A-D cells red with white text
-            worksheet[cellRef].s = isIntern
-              ? { ...dataStyleRemovedABold }
-              : { ...dataStyleRemovedA };
+            worksheet[cellRef].s = isIntern ? { ...dataStyleRemovedABold } : { ...dataStyleRemovedA };
           } else {
             // Normal row: normal coloring
-            worksheet[cellRef].s = isIntern
-              ? { ...dataStyleLeftColumnsBold }
-              : { ...dataStyleLeftColumns };
+            worksheet[cellRef].s = isIntern ? { ...dataStyleLeftColumnsBold } : { ...dataStyleLeftColumns };
           }
         } else {
           // Columns E+: check if B-element is new, removed, or changed
           const bElementName = headerRow[col];
-          const isNewB =
-            baselineSets &&
-            currentSets &&
-            !baselineSets.bElements.has(bElementName);
-          const isRemovedB =
-            baselineSets &&
-            currentSets &&
-            !currentSets.bElements.has(bElementName);
+          const isNewB = baselineSets && currentSets && !baselineSets.bElements.has(bElementName);
+          const isRemovedB = baselineSets && currentSets && !currentSets.bElements.has(bElementName);
           const isChangedB = changedBElements.has(bElementName);
 
           if (cellValue === "x") {
@@ -543,23 +554,13 @@ function output2Excel(comatrix, outputPath, comatrixBase, comatrixCurrent) {
             if (baselineSets && currentSets) {
               const inBaseline =
                 comatrixBase.aElements.has(aElementName) &&
-                comatrixBase.aElements
-                  .get(aElementName)
-                  .schnittstellenMap.has(schnittstelle) &&
-                comatrixBase.aElements
-                  .get(aElementName)
-                  .schnittstellenMap.get(schnittstelle)
-                  .has(bElementName);
+                comatrixBase.aElements.get(aElementName).schnittstellenMap.has(schnittstelle) &&
+                comatrixBase.aElements.get(aElementName).schnittstellenMap.get(schnittstelle).has(bElementName);
 
               const inCurrent =
                 comatrixCurrent.aElements.has(aElementName) &&
-                comatrixCurrent.aElements
-                  .get(aElementName)
-                  .schnittstellenMap.has(schnittstelle) &&
-                comatrixCurrent.aElements
-                  .get(aElementName)
-                  .schnittstellenMap.get(schnittstelle)
-                  .has(bElementName);
+                comatrixCurrent.aElements.get(aElementName).schnittstellenMap.has(schnittstelle) &&
+                comatrixCurrent.aElements.get(aElementName).schnittstellenMap.get(schnittstelle).has(bElementName);
 
               if (inCurrent && !inBaseline) {
                 connectionStatus = "new";
@@ -571,11 +572,7 @@ function output2Excel(comatrix, outputPath, comatrixBase, comatrixCurrent) {
             // "x" cell: color based on connection status or element status
             if (connectionStatus === "new" || isNewRow || isNewB) {
               worksheet[cellRef].s = { ...dataStyleXNew };
-            } else if (
-              connectionStatus === "removed" ||
-              isRemovedRow ||
-              isRemovedB
-            ) {
+            } else if (connectionStatus === "removed" || isRemovedRow || isRemovedB) {
               worksheet[cellRef].s = { ...dataStyleXRemoved };
             } else {
               worksheet[cellRef].s = { ...dataStyleX };
@@ -597,7 +594,7 @@ function output2Excel(comatrix, outputPath, comatrixBase, comatrixCurrent) {
   if (worksheet["C1"]) worksheet["C1"].s = styleC1;
 
   // Apply styles to B-element domain row (row 0) columns D onwards - gray
-  for (let col = 3; col < bDomainRow.length; col++) {
+  for (let col = 3; col < dataWithColumnSeparators[0].length; col++) {
     const cellRef = XLSX.utils.encode_cell({ r: 0, c: col });
     if (worksheet[cellRef]) {
       worksheet[cellRef].s = domainStyleGray;
@@ -605,7 +602,7 @@ function output2Excel(comatrix, outputPath, comatrixBase, comatrixCurrent) {
   }
 
   // Apply styles to main header row (row 1) and domain row (row 0) for B-elements
-  for (let col = 0; col < headerRow.length; col++) {
+  for (let col = 0; col < dataWithColumnSeparators[1].length; col++) {
     const cellRef1 = XLSX.utils.encode_cell({ r: 1, c: col });
     const cellRef0 = XLSX.utils.encode_cell({ r: 0, c: col });
 
@@ -615,72 +612,86 @@ function output2Excel(comatrix, outputPath, comatrixBase, comatrixCurrent) {
         worksheet[cellRef1].s = headerStyleStandard;
       }
     } else {
-      // Columns 4+ (B elements): check if new, removed, or changed
-      const bElementName = headerRow[col];
-      const isNewB =
-        baselineSets &&
-        currentSets &&
-        !baselineSets.bElements.has(bElementName);
-      const isRemovedB =
-        baselineSets && currentSets && !currentSets.bElements.has(bElementName);
-      const isChangedB = changedBElements.has(bElementName);
+      // Columns 4+ (B elements): check if this is a separator column or regular column
+      const row1Value = dataWithColumnSeparators[1][col];
+      const isColSeparator = isSeparatorColumn(dataWithColumnSeparators, col);
 
-      if (isNewB) {
-        // New B-element: green fill in rows 0 and 1
-        const styleNewBDomain = {
-          font: getFontStyle(COLOR_ADDED),
-          alignment: { horizontal: "center" },
-          border: borderStyle,
-          fill: { fgColor: { rgb: COLOR_ADDED } },
-        };
-        const styleNewBHeader = {
-          font: getFontStyle(COLOR_ADDED),
-          alignment: { horizontal: "center", textRotation: 90, wrapText: true },
-          border: borderStyle,
-          fill: { fgColor: { rgb: COLOR_ADDED } },
-        };
-        if (worksheet[cellRef0]) worksheet[cellRef0].s = styleNewBDomain;
-        if (worksheet[cellRef1]) worksheet[cellRef1].s = styleNewBHeader;
-      } else if (isRemovedB) {
-        // Removed B-element: red fill in rows 0 and 1
-        const styleRemovedBDomain = {
-          font: getFontStyle(COLOR_REMOVED),
-          alignment: { horizontal: "center" },
-          border: borderStyle,
-          fill: { fgColor: { rgb: COLOR_REMOVED } },
-        };
-        const styleRemovedBHeader = {
-          font: getFontStyle(COLOR_REMOVED),
-          alignment: { horizontal: "center", textRotation: 90, wrapText: true },
-          border: borderStyle,
-          fill: { fgColor: { rgb: COLOR_REMOVED } },
-        };
-        if (worksheet[cellRef0]) worksheet[cellRef0].s = styleRemovedBDomain;
-        if (worksheet[cellRef1]) worksheet[cellRef1].s = styleRemovedBHeader;
-      } else if (isChangedB) {
-        // Changed B-element: yellow fill in rows 0 and 1
-        const styleChangedBDomain = {
-          font: getFontStyle(COLOR_CHANGED_ALT),
-          alignment: { horizontal: "center" },
-          border: borderStyle,
-          fill: { fgColor: { rgb: COLOR_CHANGED_ALT } },
-        };
-        const styleChangedBHeader = {
-          font: getFontStyle(COLOR_CHANGED_ALT),
-          alignment: { horizontal: "center", textRotation: 90, wrapText: true },
-          border: borderStyle,
-          fill: { fgColor: { rgb: COLOR_CHANGED_ALT } },
-        };
-        if (worksheet[cellRef0]) worksheet[cellRef0].s = styleChangedBDomain;
-        if (worksheet[cellRef1]) worksheet[cellRef1].s = styleChangedBHeader;
+      if (isColSeparator) {
+        // Column separator: apply separator style
+        if (worksheet[cellRef0]) worksheet[cellRef0].s = separatorStyleCentered;
+        if (worksheet[cellRef1]) worksheet[cellRef1].s = separatorStyleCentered;
       } else {
-        // Existing B-element: normal styling
-        if (worksheet[cellRef1]) {
-          worksheet[cellRef1].s = headerStyleVertical;
+        // Regular B-element column
+        const bElementName = row1Value;
+        const isNewB = baselineSets && currentSets && !baselineSets.bElements.has(bElementName);
+        const isRemovedB = baselineSets && currentSets && !currentSets.bElements.has(bElementName);
+        const isChangedB = changedBElements.has(bElementName);
+
+        if (isNewB) {
+          // New B-element: green fill in rows 0 and 1
+          const styleNewBDomain = {
+            font: getFontStyle(COLOR_ADDED),
+            alignment: { horizontal: "center" },
+            border: borderStyle,
+            fill: { fgColor: { rgb: COLOR_ADDED } },
+          };
+          const styleNewBHeader = {
+            font: getFontStyle(COLOR_ADDED),
+            alignment: { horizontal: "center", textRotation: 90, wrapText: true },
+            border: borderStyle,
+            fill: { fgColor: { rgb: COLOR_ADDED } },
+          };
+          if (worksheet[cellRef0]) worksheet[cellRef0].s = styleNewBDomain;
+          if (worksheet[cellRef1]) worksheet[cellRef1].s = styleNewBHeader;
+        } else if (isRemovedB) {
+          // Removed B-element: red fill in rows 0 and 1
+          const styleRemovedBDomain = {
+            font: getFontStyle(COLOR_REMOVED),
+            alignment: { horizontal: "center" },
+            border: borderStyle,
+            fill: { fgColor: { rgb: COLOR_REMOVED } },
+          };
+          const styleRemovedBHeader = {
+            font: getFontStyle(COLOR_REMOVED),
+            alignment: { horizontal: "center", textRotation: 90, wrapText: true },
+            border: borderStyle,
+            fill: { fgColor: { rgb: COLOR_REMOVED } },
+          };
+          if (worksheet[cellRef0]) worksheet[cellRef0].s = styleRemovedBDomain;
+          if (worksheet[cellRef1]) worksheet[cellRef1].s = styleRemovedBHeader;
+        } else if (isChangedB) {
+          // Changed B-element: yellow fill in rows 0 and 1
+          const styleChangedBDomain = {
+            font: getFontStyle(COLOR_CHANGED_ALT),
+            alignment: { horizontal: "center" },
+            border: borderStyle,
+            fill: { fgColor: { rgb: COLOR_CHANGED_ALT } },
+          };
+          const styleChangedBHeader = {
+            font: getFontStyle(COLOR_CHANGED_ALT),
+            alignment: { horizontal: "center", textRotation: 90, wrapText: true },
+            border: borderStyle,
+            fill: { fgColor: { rgb: COLOR_CHANGED_ALT } },
+          };
+          if (worksheet[cellRef0]) worksheet[cellRef0].s = styleChangedBDomain;
+          if (worksheet[cellRef1]) worksheet[cellRef1].s = styleChangedBHeader;
+        } else {
+          // Existing B-element: normal styling
+          if (worksheet[cellRef1]) {
+            worksheet[cellRef1].s = headerStyleVertical;
+          }
         }
       }
     }
   }
+
+  // Apply Excel row grouping for rows with same Domäne and Anwendungssystem
+  console.log("Step 6: Applying row grouping...");
+  applyRowGrouping(worksheet, dataWithColumnSeparators.slice(2)); // Pass data rows only (skip domain row and header row)
+
+  // Apply Excel column grouping for columns with same domain
+  console.log("Step 6.5: Applying column grouping...");
+  applyColumnGrouping(worksheet, dataWithColumnSeparators);
 
   // Add worksheet to workbook
   XLSX.utils.book_append_sheet(workbook, worksheet, "Matrix");
@@ -688,21 +699,21 @@ function output2Excel(comatrix, outputPath, comatrixBase, comatrixCurrent) {
   // Set freeze panes: freeze first 2 rows and first 4 columns (A-D)
   workbook.Workbook = { Views: [{ xSplit: 4, ySplit: 2 }] };
 
-  console.log("Step 6: Generating Excel binary...");
+  console.log("Step 7: Generating Excel binary...");
   const excelBuffer = XLSX.write(workbook, {
     type: "buffer",
     bookType: "xlsm",
     cellStyles: true,
   });
 
-  console.log(`Step 7: Writing ${excelBuffer.length} bytes to file...`);
+  console.log(`Step 8: Writing ${excelBuffer.length} bytes to file...`);
   const FileOutputStream = Java.type("java.io.FileOutputStream");
   const fos = new FileOutputStream(outputPath, false);
   const javaBytes = Java.to(Array.from(excelBuffer), "byte[]");
   fos.write(javaBytes);
   fos.close();
 
-  console.log(`Step 8: Excel file created successfully: ${outputPath}`);
+  console.log(`Step 9: Excel file created successfully: ${outputPath}`);
 }
 
 module.exports = output2Excel;

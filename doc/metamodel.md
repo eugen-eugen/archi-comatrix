@@ -357,6 +357,13 @@ Result in comatrix.xlsx:
 - Compares relationship existence between baseline and current model
 - Element and connection presence/absence determines colors
 
+**What Excel features are applied?**
+- Frozen panes: First 4 columns (A-D) and first 2 rows are frozen
+- Auto-fit column widths based on content
+- Row grouping: Consecutive rows with the same Domäne and Anwendungssystem are grouped together
+  - Groups can be collapsed/expanded using Excel's outline controls ([-]/[+] buttons on left margin)
+  - Useful for focusing on specific applications or hiding detailed interface rows
+
 ### Applist.xlsx Output
 
 **What influences which applications appear?**
