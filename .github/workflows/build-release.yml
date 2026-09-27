@@ -68,31 +68,33 @@ jobs:
       
       - name: Deploy to release branch
         run: |
-          # Create a temporary directory for the release branch
+          # Save the bundled artifacts outside the work tree
           mkdir -p /tmp/release
-          cp dist/comatrix-bundled.ajs /tmp/release/
+          cp dist/comatrix-bundled.ajs dist/metacomatrix-bundled.ajs /tmp/release/
           
           # Configure git to use the GitHub token
           git config --global url."https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/".insteadOf "https://github.com/"
           
-          # Fetch or create release branch
-          git fetch origin release:release 2>/dev/null || true
+          # Check out the release branch: reset to remote if it exists, else create it orphan
+          if git ls-remote --exit-code --heads origin release >/dev/null 2>&1; then
+            git fetch origin release
+            git checkout -B release origin/release
+          else
+            git checkout --orphan release
+          fi
           
-          # Switch to release branch (create if doesn't exist)
-          git checkout release 2>/dev/null || git checkout --orphan release
+          # Remove all tracked files (keep .git)
+          git rm -rf . >/dev/null 2>&1 || true
           
-          # Remove all files except .git
-          git rm -rf . 2>/dev/null || true
-          
-          # Copy the bundled file
-          cp /tmp/release/comatrix-bundled.ajs .
+          # Copy the bundled files
+          cp /tmp/release/comatrix-bundled.ajs /tmp/release/metacomatrix-bundled.ajs .
           
           # Add and commit
-          git add comatrix-bundled.ajs
+          git add comatrix-bundled.ajs metacomatrix-bundled.ajs
           
           if git diff --staged --quiet; then
             echo "No changes to commit"
           else
-            git commit -m "Release: Update bundled script from ${{ github.sha }}"
+            git commit -m "Release: Update bundled scripts from ${{ github.sha }}"
             git push origin release
           fi
