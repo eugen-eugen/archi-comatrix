@@ -75,12 +75,13 @@ jobs:
           # Configure git to use the GitHub token
           git config --global url."https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/".insteadOf "https://github.com/"
           
-          # Check out the release branch: reset to remote if it exists, else create it orphan
+          # Check out the release branch: reset to remote if it exists, else create it orphan.
+          # Force (-f) discards work-tree changes (e.g. package-lock.json from npm install).
           if git ls-remote --exit-code --heads origin release >/dev/null 2>&1; then
             git fetch origin release
-            git checkout -B release origin/release
+            git checkout -f -B release origin/release
           else
-            git checkout --orphan release
+            git checkout -f --orphan release
           fi
           
           # Remove all tracked files (keep .git)
