@@ -98,7 +98,7 @@ function runMetaComatrix() {
 
   const normalizedPath = model.path ? model.path.replace(/\\/g, "/") : null;
   const outputDir = normalizedPath ? path.dirname(normalizedPath) : __DIR__;
-  const outputPath = path.join(outputDir, "comatrix-metamodel.xlsx");
+  const outputPath = path.join(outputDir, "comatrix-metamodel.xlsm");
 
   console.log(`\nWriting ${sheets.length} worksheet(s) to: ${outputPath}`);
   try {

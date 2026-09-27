@@ -257,7 +257,7 @@ function sheetNameFor(rawName, used) {
 /**
  * Writes all matrix/diff sheets to a single workbook file.
  * @param {Array<Object>} sheets - Matrix or diff sheet models
- * @param {String} outputPath - Destination .xlsx path
+ * @param {String} outputPath - Destination .xlsm path
  */
 function metaOutput2Excel(sheets, outputPath) {
   const workbook = XLSX.utils.book_new();
@@ -268,7 +268,7 @@ function metaOutput2Excel(sheets, outputPath) {
     XLSX.utils.book_append_sheet(workbook, ws, sheetNameFor(sheet.name, used));
   });
 
-  const excelBuffer = XLSX.write(workbook, { type: "buffer", bookType: "xlsx", cellStyles: true });
+  const excelBuffer = XLSX.write(workbook, { type: "buffer", bookType: "xlsm", cellStyles: true });
 
   const FileOutputStream = Java.type("java.io.FileOutputStream");
   const fos = new FileOutputStream(outputPath, false);
