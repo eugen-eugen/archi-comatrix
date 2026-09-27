@@ -3,6 +3,8 @@
  * Functions for extracting and analyzing Archi model elements
  */
 
+const { PROP_SCHNITTSTELLE, SPECIALIZATION_DOMAENE, SPECIALIZATION_FACHBEREICH } = require("./archi-properties");
+
 /**
  * Helper function to find all groupings with a specific specialization
  * @param {Object} element - The Archi element
@@ -71,7 +73,7 @@ function findAllGroupings(element, targetSpecialization, visited, currentPath) {
 function findDomain(element) {
   const visited = new Set();
   const currentPath = new Set();
-  const result = findAllGroupings(element, "Domäne", visited, currentPath);
+  const result = findAllGroupings(element, SPECIALIZATION_DOMAENE, visited, currentPath);
 
   if (result.hasCycle) {
     return "cycle";
@@ -92,7 +94,7 @@ function findDomain(element) {
 function findFachbereich(element) {
   const visited = new Set();
   const currentPath = new Set();
-  const result = findAllGroupings(element, "Fachbereich", visited, currentPath);
+  const result = findAllGroupings(element, SPECIALIZATION_FACHBEREICH, visited, currentPath);
 
   if (result.hasCycle) {
     return "cycle";
@@ -119,7 +121,7 @@ function extractElements(model) {
     .each((relationship) => {
       if (true) {
         // Get the Schnittstelle property values, can be multiply with same key
-        const schnittstellen = relationship.prop("Schnittstelle", true) || "";
+        const schnittstellen = relationship.prop(PROP_SCHNITTSTELLE, true) || "";
         if (schnittstellen) {
           // Find domains for source and target
           const sourceDomain = findDomain(relationship.source);

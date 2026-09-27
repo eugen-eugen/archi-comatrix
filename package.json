@@ -29,6 +29,7 @@
     "access": "public"
   },
   "dependencies": {
+    "@eugen-eugen/archi-metamodel": "^1.0.0",
     "path-browserify": "^1.0.1",
     "xlsx-js-style": "^1.2.0"
   },

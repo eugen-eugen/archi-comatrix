@@ -8,6 +8,8 @@ const path = require("path");
 const output2Excel = require("./output2Excel");
 const { findDomain, extractElements } = require("./model");
 const { getParameter } = require("./params");
+const { PROP_BASELINE } = require("./archi-properties");
+const { isBlank } = require("./text");
 
 /**
  * Sorts elements by domain (empty domains last), then by element name
@@ -124,7 +126,7 @@ function merge(comatrixBase, comatrixCurrent) {
       const existingData = aElements.get(key);
 
       // Update domain: use current if baseline is empty or differs
-      if (!existingData.domain || existingData.domain === "" || existingData.domain !== value.domain) {
+      if (isBlank(existingData.domain) || existingData.domain !== value.domain) {
         existingData.domain = value.domain;
       }
 
@@ -158,7 +160,7 @@ function merge(comatrixBase, comatrixCurrent) {
     if (bElementsMap.has(name)) {
       const baselineData = bElementsMap.get(name);
       // Use current domain if baseline is empty or differs
-      if (!baselineData.domain || baselineData.domain === "" || baselineData.domain !== data.domain) {
+      if (isBlank(baselineData.domain) || baselineData.domain !== data.domain) {
         bElementsMap.set(name, { domain: data.domain });
       }
     } else {
@@ -217,7 +219,7 @@ function runComatrix() {
   // Priority 1: Command line parameter --baselineModel
   // Priority 2: Model property 'baseline'
   const baselineModelPath = getParameter("baselineModel");
-  const baselineProperty = model.prop("baseline");
+  const baselineProperty = model.prop(PROP_BASELINE);
   let baselineModel = null;
   let compareMode = false;
 
@@ -240,7 +242,7 @@ function runComatrix() {
       console.log(`✗ Error loading baseline model: ${error.message}`);
       console.log("Running in single model mode.\n");
     }
-  } else if (!baselineProperty || baselineProperty.trim() === "") {
+  } else if (isBlank(baselineProperty)) {
     console.log("ℹ No --baselineModel parameter provided.");
     console.log("ℹ Property 'baseline' is not set in the selected model.");
     console.log("Running in single model mode.\n");

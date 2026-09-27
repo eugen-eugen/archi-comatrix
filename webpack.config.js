@@ -5,6 +5,7 @@ module.exports = {
   mode: "production",
   entry: {
     "comatrix-bundled": "./src/main/comatrix.js",
+    "metacomatrix-bundled": "./src/main/metacomatrix.js",
     "applist-bundled": "./src/main/applist.js",
     "tgf-bundled": "./src/main/tgf.js",
   },
