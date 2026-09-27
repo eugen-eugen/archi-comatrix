@@ -150,732 +150,6 @@ module.exports = {
 
 /***/ },
 
-/***/ 218
-(module, __unused_webpack_exports, __webpack_require__) {
-
-/**
- * output2Excel.js
- * Excel export functionality with styling and baseline comparison
- */
-
-const XLSX = __webpack_require__(402);
-const {
-  insertGroupSeparators,
-  isSeparatorRow,
-  applyRowGrouping,
-  insertColumnSeparators,
-  isSeparatorColumn,
-  applyColumnGrouping,
-} = __webpack_require__(640);
-
-// Color constants for Excel styling
-const COLOR_ADDED = "9BBB59"; // Green (RGB 155/187/89) - New elements
-const COLOR_CHANGED = "FFC000"; // Orange (RGB 255/192/0) - Changed elements
-const COLOR_CHANGED_ALT = "FFFF00"; // Yellow (RGB 255/255/0) - Alternative changed color
-const COLOR_REMOVED = "C0504D"; // Red (RGB 192/80/77) - Removed elements
-const COLOR_HEADER_GRAY = "D9D9D9"; // Light gray (RGB 217/217/217) - Headers
-const COLOR_COLUMN_BLUE = "B8CCE4"; // Light blue (RGB 184/204/228) - B-element columns
-const COLOR_TEXT_BLACK = "000000"; // Black - Default text
-const COLOR_TEXT_WHITE = "FFFFFF"; // White - Text on red background
-
-/**
- * Outputs a connectivity matrix to Excel with optional baseline comparison
- * @param {Object} comatrix - Matrix data structure from buildComatrix() or merge()
- * @param {String} outputPath - Path to save the Excel file
- * @param {Object} comatrixBase - Optional baseline matrix for comparison (from buildComatrix)
- * @param {Object} comatrixCurrent - Optional current matrix for comparison (from buildComatrix)
- */
-function output2Excel(comatrix, outputPath, comatrixBase, comatrixCurrent) {
-  const { aElements, bElementsMap, sortedAElements, sortedBElements } = comatrix;
-
-  // Build baseline and current sets if provided for comparison
-  let baselineSets = null;
-  let currentSets = null;
-  let changedAElements = new Set(); // A-elements with changed connections
-  let changedBElements = new Set(); // B-elements with changed connections
-  let baselineRowCombinations = new Set(); // Set of "AElement|Schnittstelle" combinations in baseline
-  let currentRowCombinations = new Set(); // Set of "AElement|Schnittstelle" combinations in current
-  let changedRowCombinations = new Set(); // Row combinations with connection changes
-
-  if (comatrixBase && comatrixCurrent) {
-    console.log("Building baseline and current sets for comparison...");
-
-    baselineSets = {
-      aElements: new Set(),
-      bElements: new Set(),
-    };
-
-    // Add only element names (not domains) for comparison
-    comatrixBase.aElements.forEach((value, name) => {
-      baselineSets.aElements.add(name);
-    });
-
-    comatrixBase.bElementsMap.forEach((domain, name) => {
-      baselineSets.bElements.add(name);
-    });
-
-    currentSets = {
-      aElements: new Set(),
-      bElements: new Set(),
-    };
-
-    // Add only element names (not domains) for comparison
-    comatrixCurrent.aElements.forEach((value, name) => {
-      currentSets.aElements.add(name);
-    });
-
-    comatrixCurrent.bElementsMap.forEach((domain, name) => {
-      currentSets.bElements.add(name);
-    });
-
-    // Build row combinations (A-element + Schnittstelle)
-    comatrixBase.aElements.forEach((data, aName) => {
-      data.schnittstellenMap.forEach((bSet, schnittstelle) => {
-        baselineRowCombinations.add(`${aName}|${schnittstelle}`);
-      });
-    });
-
-    comatrixCurrent.aElements.forEach((data, aName) => {
-      data.schnittstellenMap.forEach((bSet, schnittstelle) => {
-        currentRowCombinations.add(`${aName}|${schnittstelle}`);
-      });
-    });
-
-    // Detect changed row combinations (A-element + Schnittstelle with different connections)
-    console.log("Analyzing connection changes...");
-
-    // Check combinations that exist in both baseline and current
-    currentRowCombinations.forEach((combo) => {
-      if (baselineRowCombinations.has(combo)) {
-        const [aName, schnittstelle] = combo.split("|");
-
-        const baseBSet = comatrixBase.aElements.get(aName).schnittstellenMap.get(schnittstelle);
-        const currentBSet = comatrixCurrent.aElements.get(aName).schnittstellenMap.get(schnittstelle);
-
-        // Check if the B-elements (connections) are different
-        let hasChanges = false;
-
-        baseBSet.forEach((bName) => {
-          if (!currentBSet.has(bName)) {
-            hasChanges = true;
-          }
-        });
-
-        currentBSet.forEach((bName) => {
-          if (!baseBSet.has(bName)) {
-            hasChanges = true;
-          }
-        });
-
-        if (hasChanges) {
-          changedRowCombinations.add(combo);
-        }
-      }
-    });
-
-    // Check each B-element column for changes
-    sortedBElements.forEach((bName) => {
-      const inBaseline = baselineSets.bElements.has(bName);
-      const inCurrent = currentSets.bElements.has(bName);
-
-      if (inBaseline && inCurrent) {
-        // B-element exists in both - check if any connections differ in this column
-        let hasChanges = false;
-
-        // Check all A-element + Schnittstelle combinations for this B-element
-        comatrixBase.aElements.forEach((baseData, aName) => {
-          baseData.schnittstellenMap.forEach((baseBSet, schnittstelle) => {
-            const inBaselineRow = baseBSet.has(bName);
-
-            // Check if this combination exists in current
-            let inCurrentRow = false;
-            if (comatrixCurrent.aElements.has(aName)) {
-              const currentData = comatrixCurrent.aElements.get(aName);
-              if (currentData.schnittstellenMap.has(schnittstelle)) {
-                inCurrentRow = currentData.schnittstellenMap.get(schnittstelle).has(bName);
-              }
-            }
-
-            if (inBaselineRow !== inCurrentRow) {
-              hasChanges = true;
-            }
-          });
-        });
-
-        // Also check combinations only in current
-        comatrixCurrent.aElements.forEach((currentData, aName) => {
-          currentData.schnittstellenMap.forEach((currentBSet, schnittstelle) => {
-            if (currentBSet.has(bName)) {
-              // Check if this combination existed in baseline
-              let inBaselineRow = false;
-              if (comatrixBase.aElements.has(aName)) {
-                const baseData = comatrixBase.aElements.get(aName);
-                if (baseData.schnittstellenMap.has(schnittstelle)) {
-                  inBaselineRow = baseData.schnittstellenMap.get(schnittstelle).has(bName);
-                }
-              }
-
-              if (!inBaselineRow) {
-                hasChanges = true;
-              }
-            }
-          });
-        });
-
-        if (hasChanges) {
-          changedBElements.add(bName);
-        }
-      }
-    });
-
-    console.log(
-      `Baseline contains ${baselineSets.aElements.size} A-elements and ${baselineSets.bElements.size} B-elements`,
-    );
-    console.log(
-      `Current contains ${currentSets.aElements.size} A-elements and ${currentSets.bElements.size} B-elements`,
-    );
-    console.log(
-      `Elements with changed connections: ${changedAElements.size} A-elements, ${changedBElements.size} B-elements`,
-    );
-    console.log("New elements will be highlighted with green fill.");
-    console.log("Removed elements will be highlighted with red fill.");
-    console.log("Elements with changed connections will be highlighted with orange fill.\n");
-  }
-
-  console.log("Step 3: Building matrix data...");
-
-  // Build domain row for B elements (first row)
-  const bDomainRow = [
-    "Grün = Hinzugefügt",
-    "Orange = geändert",
-    "Rot = gelöscht",
-    "",
-    ...sortedBElements.map((bName) => bElementsMap.get(bName).domain),
-  ];
-
-  // Build header row (second row)
-  const headerRow = ["Domäne", "Anwendungssystem", "Angebotene Schnittstelle", "intern/extern", ...sortedBElements];
-
-  // Build data rows
-  const dataRows = [];
-  sortedAElements.forEach((aName) => {
-    const aData = aElements.get(aName);
-    const aDomain = aData.domain;
-    const schnittstellenMap = aData.schnittstellenMap;
-    const sortedSchnittstellen = Array.from(schnittstellenMap.keys()).sort();
-
-    sortedSchnittstellen.forEach((schnittstelle) => {
-      const targetSet = schnittstellenMap.get(schnittstelle);
-
-      // Determine if intern or extern based on domains
-      // Check if any B element in this row has a connection
-      let hasConnectionWithDomain = false;
-      let hasConnectionWithoutDomain = false;
-
-      sortedBElements.forEach((bName) => {
-        if (targetSet.has(bName)) {
-          const bDomain = bElementsMap.get(bName).domain;
-          if (aDomain !== "" && bDomain !== "") {
-            hasConnectionWithDomain = true;
-          } else {
-            hasConnectionWithoutDomain = true;
-          }
-        }
-      });
-
-      // Determine intern/extern: if at least one connection is extern, mark as extern
-      const internExtern = hasConnectionWithoutDomain ? "extern" : hasConnectionWithDomain ? "intern" : "";
-
-      const row = [aDomain, aName, schnittstelle, internExtern];
-
-      // Add "x" for each B element if connection exists
-      sortedBElements.forEach((bName) => {
-        row.push(targetSet.has(bName) ? "x" : "");
-      });
-
-      dataRows.push(row);
-    });
-  });
-
-  // Insert group separator rows
-  console.log(`Step 3.5: Inserting group separators into ${dataRows.length} rows...`);
-  const dataRowsWithSeparators = insertGroupSeparators(dataRows);
-  console.log(`Result: ${dataRowsWithSeparators.length} rows (including separators)`);
-
-  // Combine domain row, header, and data
-  const data = [bDomainRow, headerRow, ...dataRowsWithSeparators];
-
-  // Insert column separators
-  console.log(`Step 3.6: Inserting column separators into ${data[0].length - 4} B-element columns...`);
-  const dataWithColumnSeparators = insertColumnSeparators(data);
-  console.log(`Result: ${dataWithColumnSeparators[0].length} total columns (including separators)`);
-
-  console.log(
-    `Step 4: Creating worksheet with ${dataWithColumnSeparators.length - 2} data rows and ${dataWithColumnSeparators[0].length} columns...`,
-  );
-
-  // Create workbook and worksheet
-  const workbook = XLSX.utils.book_new();
-  const worksheet = XLSX.utils.aoa_to_sheet(dataWithColumnSeparators);
-
-  // Calculate column widths based on content
-  console.log("Step 4.5: Calculating auto-fit column widths...");
-  const colWidths = [];
-
-  for (let col = 0; col < dataWithColumnSeparators[0].length; col++) {
-    let maxWidth = 0;
-
-    if (col < 4) {
-      // For Domäne, Anwendungssystem, Angebotene Schnittstelle, and intern/extern columns, calculate based on content
-      for (let row = 0; row < dataWithColumnSeparators.length; row++) {
-        const cellValue = dataWithColumnSeparators[row][col];
-        if (cellValue) {
-          const cellLength = String(cellValue).length;
-          maxWidth = Math.max(maxWidth, cellLength);
-        }
-      }
-      // Add some padding and set minimum width
-      const width = Math.max(10, maxWidth + 2);
-      colWidths.push({ wch: width });
-    } else {
-      // For B-element columns (vertical text), set fixed width for 2 lines
-      colWidths.push({ wch: 5 });
-    }
-  }
-
-  worksheet["!cols"] = colWidths;
-
-  // Style the rows
-  console.log("Step 5: Applying styles and borders to all cells...");
-
-  // Helper function to get text color based on background color
-  const getTextColor = (bgColor) => {
-    if (!bgColor) {
-      return { rgb: COLOR_TEXT_BLACK }; // Black for no fill
-    }
-    // Red color (removed elements)
-    if (bgColor === COLOR_REMOVED) {
-      return { rgb: COLOR_TEXT_WHITE }; // White
-    }
-    // Yellow/Orange color (changed elements) or any other color
-    return { rgb: COLOR_TEXT_BLACK }; // Black
-  };
-
-  // Helper function to get font style based on background color and bold flag
-  const getFontStyle = (bgColor, bold = false) => {
-    const fontStyle = {
-      name: "Calibri",
-      sz: 11,
-      color: getTextColor(bgColor),
-      /*
-      bold: function () {
-        this.bold = true;
-      }.bind(this),
-      */
-    };
-
-    if (bold) {
-      fontStyle.bold = true;
-    }
-
-    return fontStyle;
-  };
-
-  // Define border style
-  const borderStyle = {
-    top: { style: "thin", color: { rgb: COLOR_TEXT_BLACK } },
-    bottom: { style: "thin", color: { rgb: COLOR_TEXT_BLACK } },
-    left: { style: "thin", color: { rgb: COLOR_TEXT_BLACK } },
-    right: { style: "thin", color: { rgb: COLOR_TEXT_BLACK } },
-  };
-
-  // Base style for all cells: Calibri 11 with borders
-  const baseStyle = {
-    font: getFontStyle(),
-    border: borderStyle,
-  };
-
-  // Style for B-element domain row (row 0) columns D onwards - normal, RGB 217/217/217
-  const domainStyleGray = {
-    font: getFontStyle(),
-    alignment: { horizontal: "center" },
-    border: borderStyle,
-    fill: { fgColor: { rgb: COLOR_HEADER_GRAY } },
-  };
-
-  // Specific styles for A1, B1, C1
-  const styleA1 = {
-    font: getFontStyle(COLOR_ADDED),
-    alignment: { horizontal: "center" },
-    border: borderStyle,
-    fill: { fgColor: { rgb: COLOR_ADDED } },
-  };
-
-  const styleB1 = {
-    font: getFontStyle(COLOR_CHANGED),
-    alignment: { horizontal: "center" },
-    border: borderStyle,
-    fill: { fgColor: { rgb: COLOR_CHANGED } },
-  };
-
-  const styleC1 = {
-    font: getFontStyle(COLOR_REMOVED),
-    alignment: { horizontal: "center" },
-    border: borderStyle,
-    fill: { fgColor: { rgb: COLOR_REMOVED } },
-  };
-
-  // Style for main header row (row 1) columns A-D - bold, RGB 217/217/217
-  const headerStyleStandard = {
-    font: getFontStyle(null, true),
-    alignment: { horizontal: "center" },
-    border: borderStyle,
-    fill: { fgColor: { rgb: COLOR_HEADER_GRAY } },
-  };
-
-  // Style for main header row (row 1) B-element columns - normal, vertical, RGB 184/204/228
-  const headerStyleVertical = {
-    font: getFontStyle(),
-    alignment: { horizontal: "center", textRotation: 90, wrapText: true },
-    border: borderStyle,
-    fill: { fgColor: { rgb: COLOR_COLUMN_BLUE } },
-  };
-
-  // Style for data cells columns A-D - Calibri 11 with borders, no fill
-  const dataStyleLeftColumns = {
-    font: getFontStyle(),
-    border: borderStyle,
-  };
-
-  // Style for data cells columns A-D (bold for intern rows) - Calibri 11 with borders, no fill
-  const dataStyleLeftColumnsBold = {
-    font: getFontStyle(null, true),
-    border: borderStyle,
-  };
-  // Style for new A-elements (not in baseline) - green fill like A1
-  const dataStyleNewA = {
-    font: getFontStyle(COLOR_ADDED),
-    border: borderStyle,
-    fill: { fgColor: { rgb: COLOR_ADDED } },
-  };
-
-  const dataStyleNewABold = {
-    font: getFontStyle(COLOR_ADDED, true),
-    border: borderStyle,
-    fill: { fgColor: { rgb: COLOR_ADDED } },
-  };
-
-  // Style for removed A-elements (in baseline but not in current) - red fill like C1
-  const dataStyleRemovedA = {
-    font: getFontStyle(COLOR_REMOVED),
-    border: borderStyle,
-    fill: { fgColor: { rgb: COLOR_REMOVED } },
-  };
-
-  const dataStyleRemovedABold = {
-    font: getFontStyle(COLOR_REMOVED, true),
-    border: borderStyle,
-    fill: { fgColor: { rgb: COLOR_REMOVED } },
-  };
-
-  // Style for changed A-elements (in both, with connection changes) - orange fill like B1
-  const dataStyleChangedA = {
-    font: getFontStyle(COLOR_CHANGED),
-    border: borderStyle,
-    fill: { fgColor: { rgb: COLOR_CHANGED } },
-  };
-
-  const dataStyleChangedABold = {
-    font: getFontStyle(COLOR_CHANGED, true),
-    border: borderStyle,
-    fill: { fgColor: { rgb: COLOR_CHANGED } },
-  };
-  // Style for data cells columns E onwards - Calibri 11 with borders, RGB 184/204/228, centered
-  const dataStyleRightColumns = {
-    font: getFontStyle(),
-    alignment: { horizontal: "center" },
-    border: borderStyle,
-    fill: { fgColor: { rgb: COLOR_COLUMN_BLUE } },
-  };
-
-  // Style for "x" cells - bold, centered, RGB 184/204/228
-  const dataStyleX = {
-    font: getFontStyle(null, true),
-    alignment: { horizontal: "center" },
-    border: borderStyle,
-    fill: { fgColor: { rgb: COLOR_COLUMN_BLUE } },
-  };
-
-  // Style for "x" cells in new A or B elements - bold, centered, green fill
-  const dataStyleXNew = {
-    font: getFontStyle(COLOR_ADDED, true),
-    alignment: { horizontal: "center" },
-    border: borderStyle,
-    fill: { fgColor: { rgb: COLOR_ADDED } },
-  };
-
-  // Style for "x" cells in removed A or B elements - bold, centered, red fill
-  const dataStyleXRemoved = {
-    font: getFontStyle(COLOR_REMOVED, true),
-    alignment: { horizontal: "center" },
-    border: borderStyle,
-    fill: { fgColor: { rgb: COLOR_REMOVED } },
-  };
-
-  // Style for separator rows - bold with gray background
-  const separatorStyle = {
-    font: getFontStyle(COLOR_HEADER_GRAY, true),
-    alignment: { horizontal: "left" },
-    border: borderStyle,
-    fill: { fgColor: { rgb: COLOR_HEADER_GRAY } },
-  };
-
-  // Style for "x" marks in separator rows - bold, centered, gray background
-  const separatorStyleCentered = {
-    font: getFontStyle(COLOR_HEADER_GRAY, true),
-    alignment: { horizontal: "center" },
-    border: borderStyle,
-    fill: { fgColor: { rgb: COLOR_HEADER_GRAY } },
-  };
-
-  // Apply base style to all cells first
-  for (let row = 0; row < dataWithColumnSeparators.length; row++) {
-    for (let col = 0; col < dataWithColumnSeparators[row].length; col++) {
-      const cellRef = XLSX.utils.encode_cell({ r: row, c: col });
-      if (!worksheet[cellRef]) {
-        worksheet[cellRef] = { v: "" };
-      }
-      // Data rows (row 2+)
-      if (row >= 2) {
-        const schnittstelle = dataWithColumnSeparators[row][2]; // Column C has Schnittstelle
-        const isIntern = dataWithColumnSeparators[row][3] === "intern"; // Check column D (intern/extern)
-        const cellValue = dataWithColumnSeparators[row][col];
-        const aElementName = dataWithColumnSeparators[row][1]; // Column B has A-element name (Anwendungssystem)
-
-        // Check if this is a separator row (empty Schnittstelle)
-        const isSeparator = schnittstelle === "";
-
-        if (isSeparator) {
-          // Apply separator style, but use centered alignment for "x" marks
-          if (cellValue === "x") {
-            worksheet[cellRef].s = separatorStyleCentered;
-          } else {
-            worksheet[cellRef].s = separatorStyle;
-          }
-          continue; // Skip other styling logic for separator rows
-        }
-
-        const rowCombo = `${aElementName}|${schnittstelle}`;
-
-        // Check row combination status
-        const isNewRow =
-          baselineRowCombinations &&
-          currentRowCombinations &&
-          !baselineRowCombinations.has(rowCombo) &&
-          currentRowCombinations.has(rowCombo);
-        const isRemovedRow =
-          baselineRowCombinations &&
-          currentRowCombinations &&
-          baselineRowCombinations.has(rowCombo) &&
-          !currentRowCombinations.has(rowCombo);
-        const isChangedRow = changedRowCombinations.has(rowCombo);
-
-        if (col < 4) {
-          // Columns A-D: same color for all cells in a row based on row combination status
-          if (isNewRow) {
-            // New row: all A-D cells green
-            worksheet[cellRef].s = isIntern ? { ...dataStyleNewABold } : { ...dataStyleNewA };
-          } else if (isChangedRow) {
-            // Changed row: all A-D cells yellow
-            worksheet[cellRef].s = isIntern ? { ...dataStyleChangedABold } : { ...dataStyleChangedA };
-          } else if (isRemovedRow) {
-            // Removed row: all A-D cells red with white text
-            worksheet[cellRef].s = isIntern ? { ...dataStyleRemovedABold } : { ...dataStyleRemovedA };
-          } else {
-            // Normal row: normal coloring
-            worksheet[cellRef].s = isIntern ? { ...dataStyleLeftColumnsBold } : { ...dataStyleLeftColumns };
-          }
-        } else {
-          // Columns E+: check if B-element is new, removed, or changed
-          const bElementName = headerRow[col];
-          const isNewB = baselineSets && currentSets && !baselineSets.bElements.has(bElementName);
-          const isRemovedB = baselineSets && currentSets && !currentSets.bElements.has(bElementName);
-          const isChangedB = changedBElements.has(bElementName);
-
-          if (cellValue === "x") {
-            // Check if this specific connection is new or removed
-            let connectionStatus = "existing";
-
-            if (baselineSets && currentSets) {
-              const inBaseline =
-                comatrixBase.aElements.has(aElementName) &&
-                comatrixBase.aElements.get(aElementName).schnittstellenMap.has(schnittstelle) &&
-                comatrixBase.aElements.get(aElementName).schnittstellenMap.get(schnittstelle).has(bElementName);
-
-              const inCurrent =
-                comatrixCurrent.aElements.has(aElementName) &&
-                comatrixCurrent.aElements.get(aElementName).schnittstellenMap.has(schnittstelle) &&
-                comatrixCurrent.aElements.get(aElementName).schnittstellenMap.get(schnittstelle).has(bElementName);
-
-              if (inCurrent && !inBaseline) {
-                connectionStatus = "new";
-              } else if (inBaseline && !inCurrent) {
-                connectionStatus = "removed";
-              }
-            }
-
-            // "x" cell: color based on connection status or element status
-            if (connectionStatus === "new" || isNewRow || isNewB) {
-              worksheet[cellRef].s = { ...dataStyleXNew };
-            } else if (connectionStatus === "removed" || isRemovedRow || isRemovedB) {
-              worksheet[cellRef].s = { ...dataStyleXRemoved };
-            } else {
-              worksheet[cellRef].s = { ...dataStyleX };
-            }
-          } else {
-            // Empty cell: always use normal blue styling
-            worksheet[cellRef].s = { ...dataStyleRightColumns };
-          }
-        }
-      } else {
-        worksheet[cellRef].s = { ...baseStyle };
-      }
-    }
-  }
-
-  // Apply specific styles to A1, B1, C1
-  if (worksheet["A1"]) worksheet["A1"].s = styleA1;
-  if (worksheet["B1"]) worksheet["B1"].s = styleB1;
-  if (worksheet["C1"]) worksheet["C1"].s = styleC1;
-
-  // Apply styles to B-element domain row (row 0) columns D onwards - gray
-  for (let col = 3; col < dataWithColumnSeparators[0].length; col++) {
-    const cellRef = XLSX.utils.encode_cell({ r: 0, c: col });
-    if (worksheet[cellRef]) {
-      worksheet[cellRef].s = domainStyleGray;
-    }
-  }
-
-  // Apply styles to main header row (row 1) and domain row (row 0) for B-elements
-  for (let col = 0; col < dataWithColumnSeparators[1].length; col++) {
-    const cellRef1 = XLSX.utils.encode_cell({ r: 1, c: col });
-    const cellRef0 = XLSX.utils.encode_cell({ r: 0, c: col });
-
-    if (col < 4) {
-      // Columns 0-3: bold with gray
-      if (worksheet[cellRef1]) {
-        worksheet[cellRef1].s = headerStyleStandard;
-      }
-    } else {
-      // Columns 4+ (B elements): check if this is a separator column or regular column
-      const row1Value = dataWithColumnSeparators[1][col];
-      const isColSeparator = isSeparatorColumn(dataWithColumnSeparators, col);
-
-      if (isColSeparator) {
-        // Column separator: apply separator style
-        if (worksheet[cellRef0]) worksheet[cellRef0].s = separatorStyleCentered;
-        if (worksheet[cellRef1]) worksheet[cellRef1].s = separatorStyleCentered;
-      } else {
-        // Regular B-element column
-        const bElementName = row1Value;
-        const isNewB = baselineSets && currentSets && !baselineSets.bElements.has(bElementName);
-        const isRemovedB = baselineSets && currentSets && !currentSets.bElements.has(bElementName);
-        const isChangedB = changedBElements.has(bElementName);
-
-        if (isNewB) {
-          // New B-element: green fill in rows 0 and 1
-          const styleNewBDomain = {
-            font: getFontStyle(COLOR_ADDED),
-            alignment: { horizontal: "center" },
-            border: borderStyle,
-            fill: { fgColor: { rgb: COLOR_ADDED } },
-          };
-          const styleNewBHeader = {
-            font: getFontStyle(COLOR_ADDED),
-            alignment: { horizontal: "center", textRotation: 90, wrapText: true },
-            border: borderStyle,
-            fill: { fgColor: { rgb: COLOR_ADDED } },
-          };
-          if (worksheet[cellRef0]) worksheet[cellRef0].s = styleNewBDomain;
-          if (worksheet[cellRef1]) worksheet[cellRef1].s = styleNewBHeader;
-        } else if (isRemovedB) {
-          // Removed B-element: red fill in rows 0 and 1
-          const styleRemovedBDomain = {
-            font: getFontStyle(COLOR_REMOVED),
-            alignment: { horizontal: "center" },
-            border: borderStyle,
-            fill: { fgColor: { rgb: COLOR_REMOVED } },
-          };
-          const styleRemovedBHeader = {
-            font: getFontStyle(COLOR_REMOVED),
-            alignment: { horizontal: "center", textRotation: 90, wrapText: true },
-            border: borderStyle,
-            fill: { fgColor: { rgb: COLOR_REMOVED } },
-          };
-          if (worksheet[cellRef0]) worksheet[cellRef0].s = styleRemovedBDomain;
-          if (worksheet[cellRef1]) worksheet[cellRef1].s = styleRemovedBHeader;
-        } else if (isChangedB) {
-          // Changed B-element: yellow fill in rows 0 and 1
-          const styleChangedBDomain = {
-            font: getFontStyle(COLOR_CHANGED_ALT),
-            alignment: { horizontal: "center" },
-            border: borderStyle,
-            fill: { fgColor: { rgb: COLOR_CHANGED_ALT } },
-          };
-          const styleChangedBHeader = {
-            font: getFontStyle(COLOR_CHANGED_ALT),
-            alignment: { horizontal: "center", textRotation: 90, wrapText: true },
-            border: borderStyle,
-            fill: { fgColor: { rgb: COLOR_CHANGED_ALT } },
-          };
-          if (worksheet[cellRef0]) worksheet[cellRef0].s = styleChangedBDomain;
-          if (worksheet[cellRef1]) worksheet[cellRef1].s = styleChangedBHeader;
-        } else {
-          // Existing B-element: normal styling
-          if (worksheet[cellRef1]) {
-            worksheet[cellRef1].s = headerStyleVertical;
-          }
-        }
-      }
-    }
-  }
-
-  // Apply Excel row grouping for rows with same Domäne and Anwendungssystem
-  console.log("Step 6: Applying row grouping...");
-  applyRowGrouping(worksheet, dataWithColumnSeparators.slice(2)); // Pass data rows only (skip domain row and header row)
-
-  // Apply Excel column grouping for columns with same domain
-  console.log("Step 6.5: Applying column grouping...");
-  applyColumnGrouping(worksheet, dataWithColumnSeparators);
-
-  // Add worksheet to workbook
-  XLSX.utils.book_append_sheet(workbook, worksheet, "Matrix");
-
-  // Set freeze panes: freeze first 2 rows and first 4 columns (A-D)
-  workbook.Workbook = { Views: [{ xSplit: 4, ySplit: 2 }] };
-
-  console.log("Step 7: Generating Excel binary...");
-  const excelBuffer = XLSX.write(workbook, {
-    type: "buffer",
-    bookType: "xlsm",
-    cellStyles: true,
-  });
-
-  console.log(`Step 8: Writing ${excelBuffer.length} bytes to file...`);
-  const FileOutputStream = Java.type("java.io.FileOutputStream");
-  const fos = new FileOutputStream(outputPath, false);
-  const javaBytes = Java.to(Array.from(excelBuffer), "byte[]");
-  fos.write(javaBytes);
-  fos.close();
-
-  console.log(`Step 9: Excel file created successfully: ${outputPath}`);
-}
-
-module.exports = output2Excel;
-
-
-/***/ },
-
 /***/ 397
 (module) {
 
@@ -2405,6 +1679,761 @@ var XLSX={};function make_xlsx_lib(a){a.version="0.18.5",a.style_version="1.2.0"
 
 /***/ },
 
+/***/ 448
+(module) {
+
+/*
+ * Meta-Model Library
+ *
+ * This library provides functionality to extract and use meta-models from ArchiMate views.
+ * A meta-model defines which relationships are allowed between which types of elements.
+ *
+ * Meta-model can be defined by:
+ * 1. A visual group with property "meta" on the view, OR
+ * 2. A view reference element on the current view that points to another view with property "meta".
+ *    In that case, all elements on the referenced view form the meta-model.
+ * * Specialization/Generalization handling:
+ * - When a real element matches an MM element, it also matches all ancestors (generalizations) in the hierarchy
+ * - Relationships defined on generalized elements are inherited by specialized elements
+ * - Cycles in specialization relationships are detected and handled to prevent infinite loops
+ * * (c) Y. Moldawski, 2026
+ */
+
+/**
+ * Extracts the meta-model from a view
+ * Meta-model is defined by:
+ * 1. A visual group with property "meta" on the current view, OR
+ * 2. A view reference on the current view pointing to another view with property "meta"
+ * Returns null if no meta-model found
+ */
+function extractMetaModel(view) {
+  var metaModelGroup = null;
+  var metaView = view; // The view containing the meta-model
+  var fromReferencedView = false;
+
+  // First, try to find a visual group with property "meta" on current view
+  $(view)
+    .find("diagram-model-group")
+    .each(function (group) {
+      if (group.prop("meta") != null) {
+        metaModelGroup = group;
+        return false; // break
+      }
+    });
+
+  // If no meta group found, look for view references that point to a view with "meta" property
+  if (!metaModelGroup) {
+    $(view)
+      .find("diagram-model-reference")
+      .each(function (viewRef) {
+        var referencedView = viewRef.refView;
+        if (referencedView && referencedView.prop("meta") != null) {
+          metaView = referencedView;
+          fromReferencedView = true;
+          return false; // break - use first match
+        }
+      });
+
+    if (!fromReferencedView) {
+      return null;
+    }
+
+    console.log("  Using meta-model from referenced view: " + metaView.name);
+  } else {
+    console.log("  Found meta-model group: " + metaModelGroup.name);
+  }
+
+  // Check if debug mode is enabled
+  var debugEnabled = false;
+  if (metaModelGroup) {
+    debugEnabled = metaModelGroup.prop("debug") === "true";
+  } else if (fromReferencedView) {
+    debugEnabled = metaView.prop("debug") === "true";
+  }
+  if (debugEnabled) {
+    console.log("    Debug mode ENABLED for meta-model");
+  }
+
+  // Collect all elements in the meta-model
+  var mmElements = [];
+  var mmElementIds = {};
+
+  if (metaModelGroup) {
+    // Collect elements from the meta-model group
+    $(metaModelGroup)
+      .find("element")
+      .each(function (visualElement) {
+        var element = visualElement.concept;
+        mmElements.push(element);
+        mmElementIds[element.id] = element;
+      });
+  } else if (fromReferencedView) {
+    // Collect ALL elements from the referenced view
+    $(metaView)
+      .find("element")
+      .each(function (visualElement) {
+        var element = visualElement.concept;
+        mmElements.push(element);
+        mmElementIds[element.id] = element;
+      });
+  }
+
+  console.log("    Meta-model has " + mmElements.length + " element(s)");
+
+  // Collect relationships that connect elements within the meta-model
+  var mmRelationships = [];
+
+  $(metaView)
+    .find("relationship")
+    .each(function (visualRel) {
+      var rel = visualRel.concept;
+      var sourceId = rel.source.id;
+      var targetId = rel.target.id;
+
+      // Only include if both source and target are in the meta-model
+      if (mmElementIds[sourceId] && mmElementIds[targetId]) {
+        mmRelationships.push(rel);
+      }
+    });
+
+  console.log("    Meta-model has " + mmRelationships.length + " relationship(s)");
+
+  // Build indices for quick lookup
+  var elementsBySpecialization = {};
+  var elementsByType = {};
+
+  mmElements.forEach(function (element) {
+    var specialization = element.specialization;
+    var type = element.type;
+
+    if (specialization) {
+      if (!elementsBySpecialization[specialization]) {
+        elementsBySpecialization[specialization] = [];
+      }
+      elementsBySpecialization[specialization].push(element);
+    }
+
+    if (!elementsByType[type]) {
+      elementsByType[type] = [];
+    }
+    elementsByType[type].push(element);
+  });
+
+  // Build specialization hierarchy (parent -> children)
+  var specializationChildren = {};
+  var specializationParents = {};
+
+  mmRelationships.forEach(function (rel) {
+    if (rel.type === "specialization-relationship") {
+      var specificId = rel.source.id;
+      var generalId = rel.target.id;
+
+      if (!specializationChildren[generalId]) {
+        specializationChildren[generalId] = [];
+      }
+      specializationChildren[generalId].push(specificId);
+      specializationParents[specificId] = generalId;
+    }
+  });
+
+  return {
+    elements: mmElements,
+    relationships: mmRelationships,
+    elementIds: mmElementIds,
+    elementsBySpecialization: elementsBySpecialization,
+    elementsByType: elementsByType,
+    specializationChildren: specializationChildren,
+    specializationParents: specializationParents,
+    debug: debugEnabled,
+    metaView: metaView,
+  };
+}
+
+/**
+ * Gets all ancestor elements in the specialization hierarchy for a given MM element
+ * Returns array of ancestor element IDs (including the element itself)
+ * Handles cycles by tracking visited elements
+ * @param {string} elementId - The MM element ID
+ * @param {Object} metaModel - The meta-model
+ * @returns {Array} Array of ancestor element IDs
+ */
+function getElementAncestors(elementId, metaModel) {
+  var ancestors = [];
+  var visited = {};
+
+  function collectAncestors(id) {
+    if (visited[id]) {
+      return; // Avoid cycles
+    }
+    visited[id] = true;
+    ancestors.push(id);
+
+    // Follow the specialization parent
+    var parentId = metaModel.specializationParents[id];
+    if (parentId) {
+      collectAncestors(parentId);
+    }
+  }
+
+  collectAncestors(elementId);
+  return ancestors;
+}
+
+/**
+ * Finds matching meta-model elements for a real element
+ * Returns array of matching MM elements (can be empty)
+ * Includes all ancestors in the specialization hierarchy
+ */
+function findMetaModelMatches(element, metaModel) {
+  if (!metaModel) {
+    return [];
+  }
+
+  var directMatches = [];
+  var specialization = element.specialization;
+
+  if (specialization) {
+    // Match by specialization name (any type)
+    var candidates = metaModel.elementsBySpecialization[specialization];
+    if (candidates) {
+      directMatches = directMatches.concat(candidates);
+    }
+  } else {
+    // Match by concept type, but ONLY elements without specialization
+    var candidates = metaModel.elementsByType[element.type];
+    if (candidates) {
+      candidates.forEach(function (candidate) {
+        // Only add if candidate also has no specialization
+        if (!candidate.specialization) {
+          directMatches.push(candidate);
+        }
+      });
+    }
+  }
+
+  // For each direct match, also include all its ancestors (generalizations)
+  var allMatches = [];
+  var seenIds = {};
+
+  directMatches.forEach(function (mmElement) {
+    var ancestors = getElementAncestors(mmElement.id, metaModel);
+    ancestors.forEach(function (ancestorId) {
+      if (!seenIds[ancestorId]) {
+        seenIds[ancestorId] = true;
+        allMatches.push(metaModel.elementIds[ancestorId]);
+      }
+    });
+  });
+
+  return allMatches;
+}
+
+/**
+ * Compares two relationship types, treating aggregation and composition as equivalent
+ * @param {string} type1 - First relationship type
+ * @param {string} type2 - Second relationship type
+ * @returns {boolean} True if types match (considering aggregation/composition equivalence)
+ */
+function compareRelType(type1, type2) {
+  // Direct match
+  if (type1 === type2) {
+    return true;
+  }
+
+  // Special case: aggregation and composition are treated as equivalent
+  if (
+    (type1 === "aggregation-relationship" || type1 === "composition-relationship") &&
+    (type2 === "aggregation-relationship" || type2 === "composition-relationship")
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Finds matching meta-model relationships for a real relationship
+ * Returns array of matching MM relationships (can be empty)
+ * Checks both the relationship type/specialization AND that source/target elements match
+ */
+function findMetaModelRelationshipMatches(relationship, metaModel) {
+  if (!metaModel) {
+    return [];
+  }
+
+  var matches = [];
+  var specialization = relationship.specialization;
+  var type = relationship.type;
+
+  // Get matches for source and target elements
+  var sourceMatches = findMetaModelMatches(relationship.source, metaModel);
+  var targetMatches = findMetaModelMatches(relationship.target, metaModel);
+
+  // If either source or target has no matches in metamodel, no relationship can match
+  if (sourceMatches.length === 0 || targetMatches.length === 0) {
+    return [];
+  }
+
+  // Match relationships from meta-model
+  metaModel.relationships.forEach(function (mmRel) {
+    var relationshipTypeMatches = false;
+
+    // Check if relationship type/specialization matches
+    if (specialization) {
+      // Match by specialization (if relationship has one)
+      relationshipTypeMatches = mmRel.specialization === specialization;
+    } else {
+      // Match by type, but only if MM relationship also has no specialization
+      relationshipTypeMatches = compareRelType(mmRel.type, type) && !mmRel.specialization;
+    }
+
+    if (relationshipTypeMatches) {
+      // Check if source and target elements match
+      var sourceElementMatches = false;
+      var targetElementMatches = false;
+
+      // Check if any of the source matches equals the MM relationship's source
+      for (var i = 0; i < sourceMatches.length; i++) {
+        if (sourceMatches[i].id === mmRel.source.id) {
+          sourceElementMatches = true;
+          break;
+        }
+      }
+
+      // Check if any of the target matches equals the MM relationship's target
+      for (var j = 0; j < targetMatches.length; j++) {
+        if (targetMatches[j].id === mmRel.target.id) {
+          targetElementMatches = true;
+          break;
+        }
+      }
+
+      // Only add if both source and target match
+      if (sourceElementMatches && targetElementMatches) {
+        matches.push(mmRel);
+      }
+    }
+  });
+
+  return matches;
+}
+
+/**
+ * Gets all allowed relationships from a meta-model element
+ * Includes inherited relationships via specialization
+ */
+function getAllowedRelationshipsFrom(mmElement, metaModel, debugEnabled) {
+  var allowed = [];
+  var processedElements = {};
+
+  if (debugEnabled) {
+    console.log("          [Collecting FROM] " + mmElement.name + " (" + mmElement.id + ")");
+  }
+
+  function collectRelationships(elementId, depth) {
+    if (processedElements[elementId]) {
+      return; // Avoid cycles
+    }
+    processedElements[elementId] = true;
+
+    var indent = "          " + Array(depth + 1).join("  ");
+    var directCount = 0;
+
+    // Collect direct relationships from this element
+    metaModel.relationships.forEach(function (rel) {
+      if (rel.source.id === elementId && rel.type !== "specialization-relationship") {
+        allowed.push(rel);
+        directCount++;
+        if (debugEnabled) {
+          var elem = metaModel.elementIds[elementId];
+          console.log(indent + "- " + rel.type + " to " + rel.target.name);
+        }
+      }
+    });
+
+    // If this element specializes another, inherit its relationships
+    var parentId = metaModel.specializationParents[elementId];
+    if (parentId) {
+      if (debugEnabled) {
+        var parentElem = metaModel.elementIds[parentId];
+        console.log(indent + "Inheriting from: " + parentElem.name);
+      }
+      collectRelationships(parentId, depth + 1);
+    }
+  }
+
+  collectRelationships(mmElement.id, 0);
+
+  if (debugEnabled) {
+    console.log("          [Total FROM " + mmElement.name + "]: " + allowed.length + " relationship(s)");
+  }
+
+  return allowed;
+}
+
+/**
+ * Gets all allowed relationships to a meta-model element
+ * Includes inherited relationships via specialization
+ */
+function getAllowedRelationshipsTo(mmElement, metaModel, debugEnabled) {
+  var allowed = [];
+  var processedElements = {};
+
+  if (debugEnabled) {
+    console.log("          [Collecting TO] " + mmElement.name + " (" + mmElement.id + ")");
+  }
+
+  function collectRelationships(elementId, depth) {
+    if (processedElements[elementId]) {
+      return; // Avoid cycles
+    }
+    processedElements[elementId] = true;
+
+    var indent = "          " + Array(depth + 1).join("  ");
+    var directCount = 0;
+
+    // Collect direct relationships to this element
+    metaModel.relationships.forEach(function (rel) {
+      if (rel.target.id === elementId && rel.type !== "specialization-relationship") {
+        allowed.push(rel);
+        directCount++;
+        if (debugEnabled) {
+          var elem = metaModel.elementIds[elementId];
+          console.log(indent + "- " + rel.type + " from " + rel.source.name);
+        }
+      }
+    });
+
+    // If this element specializes another, inherit its relationships
+    var parentId = metaModel.specializationParents[elementId];
+    if (parentId) {
+      if (debugEnabled) {
+        var parentElem = metaModel.elementIds[parentId];
+        console.log(indent + "Inheriting from: " + parentElem.name);
+      }
+      collectRelationships(parentId, depth + 1);
+    }
+  }
+
+  collectRelationships(mmElement.id, 0);
+
+  if (debugEnabled) {
+    console.log("          [Total TO " + mmElement.name + "]: " + allowed.length + " relationship(s)");
+  }
+
+  return allowed;
+}
+
+/**
+ * Checks if a relationship matches a meta-model relationship pattern
+ * First checks specialization, then checks type
+ * Special handling: aggregation and composition are treated as equivalent
+ */
+function matchesRelationship(realRel, mmRel, debugEnabled) {
+  var realSpec = realRel.specialization;
+  var mmSpec = mmRel.specialization;
+
+  if (debugEnabled) {
+    console.log(
+      "          [Match Check] Real: " +
+        realRel.type +
+        (realSpec ? " (spec: " + realSpec + ")" : "") +
+        " vs MM: " +
+        mmRel.type +
+        (mmSpec ? " (spec: " + mmSpec + ")" : ""),
+    );
+  }
+
+  // If MM relationship has specialization, real relationship must match it
+  if (mmSpec) {
+    var matches = realSpec === mmSpec;
+    if (debugEnabled) {
+      console.log("            Specialization match: " + matches);
+    }
+    return matches;
+  }
+
+  // Compare relationship types (handles aggregation/composition equivalence)
+  var typeMatches = compareRelType(realRel.type, mmRel.type);
+  if (debugEnabled) {
+    console.log("            Type match: " + typeMatches);
+  }
+  return typeMatches;
+}
+
+/**
+ * Checks if a relationship is allowed according to the meta-model
+ * Returns true if:
+ * - No meta-model exists (allow all)
+ * - The relationship matches an allowed pattern in the meta-model
+ */
+function isRelationshipAllowed(sourceElement, targetElement, relationship, metaModel) {
+  if (!metaModel) {
+    return true; // No meta-model = allow all
+  }
+
+  var debugEnabled = metaModel.debug;
+
+  if (debugEnabled) {
+    console.log("      [MM DEBUG] Checking relationship:");
+    console.log(
+      "        Source: " +
+        sourceElement.name +
+        " (type: " +
+        sourceElement.type +
+        ", spec: " +
+        (sourceElement.specialization || "none") +
+        ")",
+    );
+    console.log(
+      "        Target: " +
+        targetElement.name +
+        " (type: " +
+        targetElement.type +
+        ", spec: " +
+        (targetElement.specialization || "none") +
+        ")",
+    );
+    console.log(
+      "        Relationship: " +
+        relationship.type +
+        (relationship.specialization ? " (spec: " + relationship.specialization + ")" : ""),
+    );
+  }
+
+  // Find matching meta-model elements for source and target
+  var sourceMatches = findMetaModelMatches(sourceElement, metaModel);
+  var targetMatches = findMetaModelMatches(targetElement, metaModel);
+
+  if (debugEnabled) {
+    console.log("        Source matches in MM: " + sourceMatches.length);
+    sourceMatches.forEach(function (m) {
+      console.log("          - " + m.name + " (type: " + m.type + ", spec: " + (m.specialization || "none") + ")");
+    });
+    console.log("        Target matches in MM: " + targetMatches.length);
+    targetMatches.forEach(function (m) {
+      console.log("          - " + m.name + " (type: " + m.type + ", spec: " + (m.specialization || "none") + ")");
+    });
+  }
+
+  if (sourceMatches.length === 0 || targetMatches.length === 0) {
+    if (debugEnabled) {
+      console.log("        Result: REJECTED (no matching elements in meta-model)");
+    }
+    return false; // No match in meta-model = not allowed
+  }
+
+  // Try all combinations of source and target matches
+  for (var i = 0; i < sourceMatches.length; i++) {
+    var mmSource = sourceMatches[i];
+    if (debugEnabled) {
+      console.log("        [Checking FROM mm_source] " + mmSource.name + " (id: " + mmSource.id + ")");
+    }
+
+    // Get all allowed relationships from this MM source (including inherited)
+    var allowedRels = getAllowedRelationshipsFrom(mmSource, metaModel, debugEnabled);
+
+    for (var j = 0; j < allowedRels.length; j++) {
+      var mmRel = allowedRels[j];
+
+      // Check if target matches and relationship type matches
+      for (var k = 0; k < targetMatches.length; k++) {
+        var mmTarget = targetMatches[k];
+
+        if (debugEnabled) {
+          console.log(
+            "          [Checking MM path] " +
+              mmSource.name +
+              " --[" +
+              mmRel.type +
+              "]--> " +
+              mmRel.target.name +
+              " (target in MM)",
+          );
+          console.log("          [Against mm_target] " + mmTarget.name + " (id: " + mmTarget.id + ")");
+          console.log("          [MM relationship target matches?] " + (mmRel.target.id === mmTarget.id));
+        }
+
+        if (mmRel.target.id === mmTarget.id && matchesRelationship(relationship, mmRel, debugEnabled)) {
+          if (debugEnabled) {
+            console.log("        Result: ALLOWED (matched pattern in meta-model)");
+          }
+          return true; // Found a matching pattern
+        }
+      }
+    }
+  }
+
+  // Also check incoming relationships
+  for (var i = 0; i < targetMatches.length; i++) {
+    var mmTarget = targetMatches[i];
+    if (debugEnabled) {
+      console.log("        [Checking TO mm_target] " + mmTarget.name + " (id: " + mmTarget.id + ")");
+    }
+
+    // Get all allowed relationships to this MM target (including inherited)
+    var allowedRels = getAllowedRelationshipsTo(mmTarget, metaModel, debugEnabled);
+
+    for (var j = 0; j < allowedRels.length; j++) {
+      var mmRel = allowedRels[j];
+
+      // Check if source matches and relationship type matches
+      for (var k = 0; k < sourceMatches.length; k++) {
+        var mmSource = sourceMatches[k];
+
+        if (debugEnabled) {
+          console.log(
+            "          [Checking MM path] " +
+              mmRel.source.name +
+              " --[" +
+              mmRel.type +
+              "]--> " +
+              mmTarget.name +
+              " (source in MM)",
+          );
+          console.log("          [Against mm_source] " + mmSource.name + " (id: " + mmSource.id + ")");
+          console.log("          [MM relationship source matches?] " + (mmRel.source.id === mmSource.id));
+        }
+
+        if (mmRel.source.id === mmSource.id && matchesRelationship(relationship, mmRel, debugEnabled)) {
+          if (debugEnabled) {
+            console.log("        Result: ALLOWED (matched pattern in meta-model)");
+          }
+          return true; // Found a matching pattern
+        }
+      }
+    }
+  }
+
+  if (debugEnabled) {
+    console.log("        Result: REJECTED (no matching pattern in meta-model)");
+  }
+  return false; // No matching pattern found
+}
+
+/**
+ * Gets the visual formatting properties from a meta-model element's first visual representation
+ * Returns an object with formatting properties or null if no visual found
+ * @param {Element} mmElement - The meta-model element
+ * @param {View} metaView - The view containing the meta-model
+ * @returns {Object|null} Formatting properties: { fontSize, fontName, fontStyle, textAlignment, textPosition, labelExpression }
+ */
+function getMetaModelFormatting(mmElement, metaView) {
+  // Find the first visual representation of this element on the meta-model view
+  var visual = null;
+
+  $(metaView)
+    .find("element")
+    .each(function (v) {
+      if (v.concept.id === mmElement.id) {
+        visual = v;
+        return false; // break
+      }
+    });
+
+  if (!visual) {
+    return null;
+  }
+
+  // Extract formatting properties
+  var formatting = {
+    fontSize: visual.fontSize,
+    fontName: visual.font,
+    fontStyle: visual.fontStyle,
+    textAlignment: visual.textAlignment,
+    textPosition: visual.textPosition,
+    labelExpression: visual.labelExpression,
+  };
+
+  return formatting;
+}
+
+/**
+ * Gets the visual formatting properties from a meta-model relationship's first visual representation
+ * Returns an object with formatting properties or null if no visual found
+ * @param {Relationship} mmRelationship - The meta-model relationship
+ * @param {View} metaView - The view containing the meta-model
+ * @returns {Object|null} Formatting properties: { fontSize, fontName, fontStyle, textAlignment, textPosition, labelExpression }
+ */
+function getMetaModelRelationshipFormatting(mmRelationship, metaView) {
+  // Find the first visual representation of this relationship on the meta-model view
+  var visual = null;
+
+  $(metaView)
+    .find("relationship")
+    .each(function (v) {
+      if (v.concept.id === mmRelationship.id) {
+        visual = v;
+        return false; // break
+      }
+    });
+
+  if (!visual) {
+    return null;
+  }
+
+  // Extract formatting properties (same as for elements)
+  var formatting = {
+    fontSize: visual.fontSize,
+    fontName: visual.font,
+    fontStyle: visual.fontStyle,
+    textAlignment: visual.textAlignment,
+    textPosition: visual.textPosition,
+    labelExpression: visual.labelExpression,
+  };
+
+  return formatting;
+}
+
+/**
+ * Applies formatting to a visual element
+ * @param {VisualElement} visualElement - The visual element to format
+ * @param {Object} formatting - Formatting properties to apply
+ */
+function applyFormatting(visualElement, formatting) {
+  if (!formatting) {
+    return;
+  }
+
+  if (formatting.fontSize !== undefined && formatting.fontSize !== null) {
+    visualElement.fontSize = formatting.fontSize;
+  }
+
+  if (formatting.fontName !== undefined && formatting.fontName !== null) {
+    visualElement.font = formatting.fontName;
+  }
+
+  if (formatting.fontStyle !== undefined && formatting.fontStyle !== null) {
+    visualElement.fontStyle = formatting.fontStyle;
+  }
+
+  if (formatting.textAlignment !== undefined && formatting.textAlignment !== null) {
+    visualElement.textAlignment = formatting.textAlignment;
+  }
+
+  if (formatting.textPosition !== undefined && formatting.textPosition !== null) {
+    visualElement.textPosition = formatting.textPosition;
+  }
+
+  if (formatting.labelExpression !== undefined && formatting.labelExpression !== null) {
+    visualElement.labelExpression = formatting.labelExpression;
+  }
+}
+
+// Export functions
+module.exports = {
+  extractMetaModel: extractMetaModel,
+  findMetaModelMatches: findMetaModelMatches,
+  findMetaModelRelationshipMatches: findMetaModelRelationshipMatches,
+  isRelationshipAllowed: isRelationshipAllowed,
+  getMetaModelFormatting: getMetaModelFormatting,
+  getMetaModelRelationshipFormatting: getMetaModelRelationshipFormatting,
+  applyFormatting: applyFormatting,
+};
+
+
+/***/ },
+
 /***/ 581
 () {
 
@@ -2571,335 +2600,6 @@ module.exports = {
 
 /***/ },
 
-/***/ 640
-(module) {
-
-/**
- * groupingExcel.js
- * Excel row and column grouping functionality
- */
-
-// Constants
-const COLUMN_E = 4; // First column for B-elements (columns A-D are fixed)
-
-/**
- * Generic function to group vectors by a key function
- * @param {Array} vectors - Array of vectors (rows or columns) to group
- * @param {Function} keyFunc - Function to extract grouping key from a vector
- * @returns {Array} Array of group objects with vectors
- */
-function groupVectorsByKey(vectors, keyFunc) {
-  if (vectors.length === 0) return [];
-
-  const groups = [];
-  let currentGroupKey = null;
-  let currentGroupVectors = [];
-
-  vectors.forEach((vector) => {
-    const groupKey = keyFunc(vector);
-
-    if (groupKey !== currentGroupKey) {
-      // Save previous group
-      if (currentGroupVectors.length > 0) {
-        groups.push({
-          key: currentGroupKey,
-          vectors: currentGroupVectors,
-        });
-      }
-      // Start new group
-      currentGroupKey = groupKey;
-      currentGroupVectors = [];
-    }
-
-    currentGroupVectors.push(vector);
-  });
-
-  // Don't forget the last group
-  if (currentGroupVectors.length > 0) {
-    groups.push({
-      key: currentGroupKey,
-      vectors: currentGroupVectors,
-    });
-  }
-
-  return groups;
-}
-
-/**
- * Helper function to insert group separator rows
- * @param {Array} dataRows - Array of data rows
- * @returns {Array} Data rows with separator rows inserted
- */
-function insertGroupSeparators(dataRows) {
-  if (dataRows.length === 0) return [];
-
-  // Group rows by Domain|Application
-  const groups = groupVectorsByKey(dataRows, (row) => `${row[0]}|${row[1]}`);
-
-  // Build result with separator rows containing aggregated "x" marks
-  const result = [];
-  groups.forEach((group) => {
-    if (group.vectors.length === 1) {
-      // Single row group: no separator needed, just add the row
-      result.push(group.vectors[0]);
-    } else {
-      // Multi-row group: add separator followed by all rows
-      const firstRow = group.vectors[0];
-      const numColumns = firstRow.length;
-      const separatorRow = [firstRow[0], firstRow[1], "", ""];
-
-      // For each B-element column, check if any row in group has "x"
-      for (let col = COLUMN_E; col < numColumns; col++) {
-        let hasX = false;
-        for (let row of group.vectors) {
-          if (row[col] === "x") {
-            hasX = true;
-            break;
-          }
-        }
-        separatorRow.push(hasX ? "x" : "");
-      }
-
-      // Add separator row
-      result.push(separatorRow);
-
-      // Add all group member rows
-      group.vectors.forEach((row) => result.push(row));
-    }
-  });
-
-  return result;
-}
-
-/**
- * Helper function to check if a row is a separator row
- * @param {Array} row - Data row
- * @returns {boolean} True if row is a separator
- */
-function isSeparatorRow(row) {
-  // Separator rows have empty Schnittstelle (column 2)
-  return row[2] === "";
-}
-
-/**
- * Helper function to apply Excel row grouping for rows with same Domain and Application
- * @param {Object} worksheet - XLSX worksheet object
- * @param {Array} dataRows - Array of data rows with separators
- */
-function applyRowGrouping(worksheet, dataRows) {
-  // Initialize !rows array if not exists
-  if (!worksheet["!rows"]) {
-    worksheet["!rows"] = [];
-  }
-
-  // Track groups: separator rows mark the start of groups
-  const groups = buildGroups(
-    dataRows,
-    isSeparatorRow,
-    (vector) => ({ domain: vector[0], application: vector[1] }),
-    2, // Data rows start at row 2 (0-indexed)
-  );
-
-  // Apply grouping levels to worksheet (only to non-separator rows)
-  groups.forEach((group) => {
-    for (let rowIdx = group.startIndex; rowIdx <= group.endIndex; rowIdx++) {
-      if (!worksheet["!rows"][rowIdx]) {
-        worksheet["!rows"][rowIdx] = {};
-      }
-      worksheet["!rows"][rowIdx].level = 1; // Set outline level 1
-      worksheet["!rows"][rowIdx].hidden = true; // Initially collapsed
-    }
-  });
-
-  console.log(`Applied grouping to ${groups.length} groups of rows (initially collapsed)`);
-}
-
-/**
- * Generic function to build groups from vectors (rows or columns)
- * @param {Array} dataVectors - Array of data vectors (rows or columns) to process
- * @param {Function} isSeparatorFunc - Function to check if a vector is a separator
- * @param {Function} groupingKeyFunc - Function to extract grouping key from a vector
- * @param {number} indexOffset - Offset for Excel index calculation (where first vector appears in Excel)
- * @returns {Array} Array of group objects
- */
-function buildGroups(dataVectors, isSeparatorFunc, groupingKeyFunc, indexOffset = 0) {
-  const groups = [];
-  let currentGroup = null;
-
-  dataVectors.forEach((vector, index) => {
-    const excelIndex = index + indexOffset;
-
-    if (isSeparatorFunc(vector)) {
-      // Save previous group if it exists and has more than one element
-      if (currentGroup && currentGroup.endIndex > currentGroup.startIndex) {
-        groups.push(currentGroup);
-      }
-      // Start new group (separator is NOT part of the group)
-      const groupKey = groupingKeyFunc(vector);
-      currentGroup = {
-        ...groupKey,
-        separatorIndex: excelIndex,
-        startIndex: excelIndex + 1, // Group starts after separator
-        endIndex: excelIndex, // Will be updated as we find group members
-      };
-    } else if (currentGroup) {
-      // Check if this vector belongs to the current group
-      const vectorKey = groupingKeyFunc(vector);
-      const keysMatch = Object.keys(vectorKey).every((k) => vectorKey[k] === currentGroup[k]);
-
-      if (keysMatch) {
-        // This is a group member
-        currentGroup.endIndex = excelIndex;
-      } else {
-        // Different key - close current group and reset
-        if (currentGroup.endIndex > currentGroup.startIndex) {
-          groups.push(currentGroup);
-        }
-        currentGroup = null; // Single element, no group
-      }
-    }
-    // else: single element with no current group - no action needed
-  });
-
-  // Don't forget the last group
-  if (currentGroup && currentGroup.endIndex > currentGroup.startIndex) {
-    groups.push(currentGroup);
-  }
-  return groups;
-}
-
-/**
- * Helper function to insert column separators
- * @param {Array} data - Matrix data with domain row, header row, and data rows
- * @returns {Array} Data with column separators inserted
- */
-function insertColumnSeparators(data) {
-  if (data.length === 0 || data[0].length <= COLUMN_E) return data;
-
-  // Create array of column indices starting from COLUMN_E
-  const columnIndices = [];
-  for (let col = COLUMN_E; col < data[0].length; col++) {
-    columnIndices.push(col);
-  }
-
-  // Group column indices by domain (from row 0)
-  const columnGroups = groupVectorsByKey(columnIndices, (colIdx) => data[0][colIdx]);
-
-  // Build new data structure with separator columns
-  const result = [];
-  for (let row of data) {
-    const newRow = [...row.slice(0, COLUMN_E)];
-
-    columnGroups.forEach((group) => {
-      if (group.vectors.length === 1) {
-        // Single column group: no separator needed
-        newRow.push(row[group.vectors[0]]);
-      } else {
-        // Multi-column group: add separator followed by all columns
-        // Separator column shows aggregated data
-        let separatorValue = "";
-
-        if (row === data[0]) {
-          // Row 0 (domain row): show domain name
-          separatorValue = group.key;
-        } else if (row === data[1]) {
-          // Row 1 (header row): empty
-          separatorValue = "";
-        } else {
-          // Data rows: aggregate "x" marks
-          let hasX = false;
-          for (let colIdx of group.vectors) {
-            if (row[colIdx] === "x") {
-              hasX = true;
-              break;
-            }
-          }
-          separatorValue = hasX ? "x" : "";
-        }
-
-        newRow.push(separatorValue);
-
-        // Add all group member columns
-        group.vectors.forEach((colIdx) => newRow.push(row[colIdx]));
-      }
-    });
-
-    result.push(newRow);
-  }
-
-  return result;
-}
-
-/**
- * Helper function to check if a column is a separator column
- * @param {Array} data - Matrix data
- * @param {number} col - Column index
- * @returns {boolean} True if column is a separator
- */
-function isSeparatorColumn(data, col) {
-  // Separator columns have domain name in row 0 and empty in row 1
-  // and the next column also has a value in row 1 (it's not the end)
-  if (col < COLUMN_E || col >= data[1].length - 1) return false;
-
-  const row0Value = data[0][col];
-  const row1Value = data[1][col];
-  const row1NextValue = data[1][col + 1];
-
-  // Separator if row 1 is empty, row 0 has domain, and next column in row 1 has a value
-  return row1Value === "" && row0Value !== "" && row1NextValue !== "";
-}
-
-/**
- * Helper function to apply column grouping
- * @param {Object} worksheet - XLSX worksheet object
- * @param {Array} data - Matrix data with separators
- */
-function applyColumnGrouping(worksheet, data) {
-  // Initialize !cols array if not exists
-  if (!worksheet["!cols"]) {
-    worksheet["!cols"] = [];
-  }
-
-  // Transpose columns into column vectors
-  const columnVectors = [];
-  for (let col = COLUMN_E; col < data[0].length; col++) {
-    columnVectors.push(data.map((row) => row[col]));
-  }
-
-  // Use buildGroups to find column groups
-  const columnGroups = buildGroups(
-    columnVectors,
-    (colVector) => colVector[1] === "" && colVector[0] !== "",
-    (colVector) => ({ domain: colVector[0] }),
-    COLUMN_E,
-  );
-
-  // Apply grouping levels to worksheet (only to non-separator columns)
-  columnGroups.forEach((group) => {
-    for (let colIdx = group.startIndex; colIdx <= group.endIndex; colIdx++) {
-      if (!worksheet["!cols"][colIdx]) {
-        worksheet["!cols"][colIdx] = {};
-      }
-      worksheet["!cols"][colIdx].level = 1; // Set outline level 1
-      worksheet["!cols"][colIdx].hidden = true; // Initially collapsed
-    }
-  });
-
-  console.log(`Applied grouping to ${columnGroups.length} groups of columns (initially collapsed)`);
-}
-
-module.exports = {
-  insertGroupSeparators,
-  isSeparatorRow,
-  applyRowGrouping,
-  insertColumnSeparators,
-  isSeparatorColumn,
-  applyColumnGrouping,
-};
-
-
-/***/ },
-
 /***/ 821
 (module) {
 
@@ -2931,6 +2631,600 @@ module.exports = {
   hasText,
   isBlank,
 };
+
+
+/***/ },
+
+/***/ 879
+(module, __unused_webpack_exports, __webpack_require__) {
+
+/**
+ * metamodelMatrix.js
+ * Meta-model driven connectivity matrix: gathers meta-models across a model's
+ * views and builds a source x target adjacency matrix per comatrix (rows = source
+ * elements, cols = target elements), plus a diff between two such matrices
+ * (baseline vs current).
+ */
+
+const {
+  extractMetaModel,
+  findMetaModelMatches,
+  findMetaModelRelationshipMatches,
+  isRelationshipAllowed,
+} = __webpack_require__(448);
+const { findDomain } = __webpack_require__(593);
+const { PROP_COMATRIX } = __webpack_require__(93);
+
+/*  Field separator for directed-edge keys "source<sep>target".  */
+const EDGE_SEP = "\u0000";
+
+/**
+ * Sorts element names by domain (empty domain last), then by name.
+ * @param {Array<String>} names - Element names
+ * @param {Map<String,String>} nameDomain - name -> domain
+ * @returns {Array<String>} Sorted names
+ */
+function sortByDomain(names, nameDomain) {
+  return names.slice().sort((name1, name2) => {
+    const domain1 = nameDomain.get(name1) || "";
+    const domain2 = nameDomain.get(name2) || "";
+
+    if ((domain1 === "") !== (domain2 === "")) {
+      return domain1 === "" ? 1 : -1;
+    }
+    if (domain1 !== domain2) {
+      return domain1.localeCompare(domain2);
+    }
+    return name1.localeCompare(name2);
+  });
+}
+
+/**
+ * Gathers every distinct meta-model reachable from a model's views.
+ * Identity of a meta-model is the id of its metaView (embedded: the view itself;
+ * linked: the referenced meta view). Subject concepts are the real elements shown
+ * on the contributing views that correspond to a meta-model element type.
+ * @param {Object} currentModel - The Archi model to scan
+ * @returns {Map<String,Object>} metaViewId -> entry { id, name, mm, views, concepts }
+ */
+function gatherMetamodels(currentModel) {
+  const metamodels = new Map();
+
+  $(currentModel)
+    .find("view")
+    .each((view) => {
+      const mm = extractMetaModel(view);
+      if (!mm) {
+        return;
+      }
+
+      const metaViewId = mm.metaView.id;
+      let entry = metamodels.get(metaViewId);
+      if (!entry) {
+        entry = {
+          id: metaViewId,
+          name: mm.metaView.name,
+          mm: mm,
+          views: [],
+          concepts: new Map(),
+        };
+        metamodels.set(metaViewId, entry);
+      }
+      entry.views.push(view);
+
+      /*  Collect real elements shown on this contributing view.  */
+      $(view)
+        .find("element")
+        .each((visual) => {
+          const concept = visual.concept;
+          if (!concept) {
+            return;
+          }
+
+          /*  Drop the meta-model definition elements themselves.  */
+          if (entry.mm.elementIds[concept.id]) {
+            return;
+          }
+
+          /*  Keep only elements corresponding to a meta-model element type.  */
+          if (findMetaModelMatches(concept, entry.mm).length === 0) {
+            return;
+          }
+          entry.concepts.set(concept.id, concept);
+        });
+    });
+
+  return metamodels;
+}
+
+/**
+ * Reads the Report:Model:Comatrix routing of a meta-model relationship.
+ * @param {Object} mmRelationship - A meta-model relationship concept
+ * @returns {Object|null} { id, name, kind } or null when the property key is absent
+ */
+function comatrixRouteOf(mmRelationship, mm) {
+  const keys = mmRelationship.prop();
+  if (!keys || keys.indexOf(PROP_COMATRIX) < 0) {
+    console.log(`✗ Meta-model relationship "${mmRelationship.name}" does not have the ${PROP_COMATRIX} property.`);
+    return null;
+  }
+
+  const raw = mmRelationship.prop(PROP_COMATRIX);
+  const value = (raw === undefined || raw === null ? "" : String(raw)).trim();
+  if (value === "") {
+    return { id: "mm:" + mm.metaView.id, name: mm.metaView.name, kind: "default" };
+  }
+  return { id: value, name: value, kind: "named" };
+}
+
+/**
+ * Builds all comatrices for a model by routing each allowed direct relationship to
+ * the comatrix (or comatrices) named on its matching meta-model relationship(s).
+ * - key absent on the meta-model relationship  -> the relationship is ignored,
+ * - key present but empty                       -> default comatrix (metaView id + name),
+ * - key present with a value                    -> named comatrix (value = id and name),
+ *   merged globally across meta-models.
+ * Rows/cols contain only elements incident to a routed relationship.
+ * @param {Object} currentModel - The Archi model
+ * @returns {Map<String,Object>} comatrixId -> { id, name, kind, rowNames, colNames, edges, nameDomain }
+ */
+function buildComatrices(currentModel) {
+  const metamodels = gatherMetamodels(currentModel);
+  const comatrices = new Map();
+
+  const ensure = (route) => {
+    let comatrix = comatrices.get(route.id);
+    if (!comatrix) {
+      comatrix = {
+        id: route.id,
+        name: route.name,
+        kind: route.kind,
+        rowNames: new Set(),
+        colNames: new Set(),
+        edges: new Set(),
+        nameDomain: new Map(),
+      };
+      comatrices.set(route.id, comatrix);
+    }
+    return comatrix;
+  };
+
+  metamodels.forEach((entry) => {
+    const mm = entry.mm;
+    console.log(`Processing meta-model: "${mm.metaView.name}"`);
+
+    entry.concepts.forEach((concept) => {
+      $(concept)
+        .outRels()
+        .each((rel) => {
+          const target = rel.target;
+          if (!entry.concepts.has(target.id)) {
+            return;
+          }
+          if (!isRelationshipAllowed(rel.source, rel.target, rel, mm)) {
+            return;
+          }
+
+          const matches = findMetaModelRelationshipMatches(rel, mm);
+          if (!matches || matches.length === 0) {
+            return;
+          }
+
+          const sourceName = rel.source.name;
+          const targetName = target.name;
+
+          matches.forEach((mmRel) => {
+            const route = comatrixRouteOf(mmRel, mm);
+            if (!route) {
+              return;
+            }
+
+            const comatrix = ensure(route);
+            comatrix.edges.add(sourceName + EDGE_SEP + targetName);
+            comatrix.rowNames.add(sourceName);
+            comatrix.colNames.add(targetName);
+            if (!comatrix.nameDomain.has(sourceName)) {
+              comatrix.nameDomain.set(sourceName, findDomain(rel.source));
+            }
+            if (!comatrix.nameDomain.has(targetName)) {
+              comatrix.nameDomain.set(targetName, findDomain(target));
+            }
+          });
+        });
+    });
+  });
+
+  return comatrices;
+}
+
+/**
+ * Finalizes a comatrix into a matrix sheet with Domäne-sorted rows (sources) and
+ * columns (targets).
+ * @param {Object} comatrix - A value from buildComatrices()
+ * @returns {Object} Matrix { id, name, rowNames, colNames, nameDomain, edges }
+ */
+function toMatrix(comatrix) {
+  const rowNames = sortByDomain(Array.from(comatrix.rowNames), comatrix.nameDomain);
+  const colNames = sortByDomain(Array.from(comatrix.colNames), comatrix.nameDomain);
+  return {
+    id: comatrix.id,
+    name: comatrix.name,
+    rowNames,
+    colNames,
+    nameDomain: comatrix.nameDomain,
+    edges: comatrix.edges,
+  };
+}
+
+/**
+ * Diffs a current matrix against a baseline matrix (same comatrix id).
+ * Rows (sources) and columns (targets) are diffed on their own axes.
+ * @param {Object} current - Matrix from toMatrix() (current model)
+ * @param {Object} baseline - Matrix from toMatrix() (baseline model)
+ * @returns {Object} Diff sheet { id, name, rowNames, colNames, nameDomain, rowState, colState, edgeState, diff }
+ */
+function diffMatrix(current, baseline) {
+  const axisState = (currentAxis, baselineAxis) => {
+    const cur = new Set(currentAxis);
+    const base = new Set(baselineAxis);
+    const all = new Set([...currentAxis, ...baselineAxis]);
+    const state = new Map();
+    all.forEach((name) => {
+      const inCurrent = cur.has(name);
+      const inBaseline = base.has(name);
+      state.set(name, inCurrent && inBaseline ? "same" : inCurrent ? "added" : "removed");
+    });
+    return { all, state };
+  };
+
+  const rows = axisState(current.rowNames, baseline.rowNames);
+  const cols = axisState(current.colNames, baseline.colNames);
+
+  const nameDomain = new Map();
+  new Set([...rows.all, ...cols.all]).forEach((name) => {
+    nameDomain.set(name, current.nameDomain.has(name) ? current.nameDomain.get(name) : baseline.nameDomain.get(name));
+  });
+
+  const edgeState = new Map();
+  const allEdges = new Set([...current.edges, ...baseline.edges]);
+  allEdges.forEach((edge) => {
+    const inCurrent = current.edges.has(edge);
+    const inBaseline = baseline.edges.has(edge);
+    edgeState.set(edge, inCurrent && inBaseline ? "same" : inCurrent ? "added" : "removed");
+  });
+
+  /*  Source/target elements present in both models but with a changed relationship.  */
+  const changedSources = new Set();
+  const changedTargets = new Set();
+  edgeState.forEach((state, edge) => {
+    if (state === "same") {
+      return;
+    }
+    const parts = edge.split(EDGE_SEP);
+    changedSources.add(parts[0]);
+    changedTargets.add(parts[1]);
+  });
+  rows.state.forEach((state, name) => {
+    if (state === "same" && changedSources.has(name)) {
+      rows.state.set(name, "changed");
+    }
+  });
+  cols.state.forEach((state, name) => {
+    if (state === "same" && changedTargets.has(name)) {
+      cols.state.set(name, "changed");
+    }
+  });
+
+  const rowNames = sortByDomain(Array.from(rows.all), nameDomain);
+  const colNames = sortByDomain(Array.from(cols.all), nameDomain);
+
+  return {
+    id: current.id,
+    name: current.name,
+    rowNames,
+    colNames,
+    nameDomain,
+    rowState: rows.state,
+    colState: cols.state,
+    edgeState,
+    diff: true,
+  };
+}
+
+module.exports = {
+  EDGE_SEP,
+  gatherMetamodels,
+  buildComatrices,
+  toMatrix,
+  diffMatrix,
+};
+
+
+/***/ },
+
+/***/ 971
+(module, __unused_webpack_exports, __webpack_require__) {
+
+/**
+ * metaOutput2Excel.js
+ * Writes meta-model connectivity matrices to a single workbook, one worksheet per
+ * meta-model. Square element x element layout, Domäne grouping, optional diff
+ * coloring (green = added, red = removed).
+ */
+
+const XLSX = __webpack_require__(402);
+
+const COLOR_ADDED = "9BBB59";
+const COLOR_CHANGED = "FFC000";
+const COLOR_REMOVED = "C0504D";
+const COLOR_HEADER_GRAY = "D9D9D9";
+const COLOR_COLUMN_BLUE = "B8CCE4";
+const COLOR_SEPARATOR = "808080";
+const COLOR_TEXT_BLACK = "000000";
+const COLOR_TEXT_WHITE = "FFFFFF";
+
+const BORDER = {
+  top: { style: "thin", color: { rgb: COLOR_TEXT_BLACK } },
+  bottom: { style: "thin", color: { rgb: COLOR_TEXT_BLACK } },
+  left: { style: "thin", color: { rgb: COLOR_TEXT_BLACK } },
+  right: { style: "thin", color: { rgb: COLOR_TEXT_BLACK } },
+};
+
+/**
+ * Builds a display sequence with a separator between Domäne groups.
+ * @param {Array<String>} names - Sorted element names
+ * @param {Map<String,String>} nameDomain - name -> domain
+ * @returns {Array<Object>} Items { name } or { sep: true }
+ */
+function withSeparators(names, nameDomain) {
+  const seq = [];
+  let prevDomain = null;
+
+  names.forEach((name, index) => {
+    const domain = nameDomain.get(name) || "";
+    if (index > 0 && domain !== prevDomain) {
+      seq.push({ sep: true });
+    }
+    seq.push({ name: name });
+    prevDomain = domain;
+  });
+
+  return seq;
+}
+
+/**
+ * Creates a styled string cell.
+ */
+function cell(value, style) {
+  return { v: value, t: "s", s: style };
+}
+
+/**
+ * Resolves the fill/text style for a data cell given its diff state.
+ */
+function markStyle(state) {
+  const style = {
+    font: { name: "Calibri", sz: 11, color: { rgb: COLOR_TEXT_BLACK } },
+    alignment: { horizontal: "center" },
+    border: BORDER,
+  };
+
+  if (state === "added") {
+    style.fill = { fgColor: { rgb: COLOR_ADDED } };
+  } else if (state === "removed") {
+    style.fill = { fgColor: { rgb: COLOR_REMOVED } };
+    style.font.color = { rgb: COLOR_TEXT_WHITE };
+  }
+  return style;
+}
+
+/**
+ * Resolves the header style for a row/col element name given its diff state.
+ */
+function headerNameStyle(state, rotate) {
+  const style = {
+    font: { name: "Calibri", sz: 11, color: { rgb: COLOR_TEXT_BLACK }, bold: true },
+    alignment: rotate ? { horizontal: "center", textRotation: 90, wrapText: true } : { horizontal: "left" },
+    border: BORDER,
+    fill: { fgColor: { rgb: COLOR_COLUMN_BLUE } },
+  };
+
+  if (state === "added") {
+    style.fill = { fgColor: { rgb: COLOR_ADDED } };
+  } else if (state === "changed") {
+    style.fill = { fgColor: { rgb: COLOR_CHANGED } };
+  } else if (state === "removed") {
+    style.fill = { fgColor: { rgb: COLOR_REMOVED } };
+    style.font.color = { rgb: COLOR_TEXT_WHITE };
+  }
+  return style;
+}
+
+const SEP_STYLE = {
+  border: BORDER,
+  fill: { fgColor: { rgb: COLOR_SEPARATOR } },
+};
+
+const GRAY_STYLE = {
+  font: { name: "Calibri", sz: 11, color: { rgb: COLOR_TEXT_BLACK }, bold: true },
+  alignment: { horizontal: "center" },
+  border: BORDER,
+  fill: { fgColor: { rgb: COLOR_HEADER_GRAY } },
+};
+
+/**
+ * Colored legend cell style (green = added, orange = changed, red = removed).
+ */
+function legendStyle(color) {
+  return {
+    font: {
+      name: "Calibri",
+      sz: 11,
+      color: { rgb: color === COLOR_REMOVED ? COLOR_TEXT_WHITE : COLOR_TEXT_BLACK },
+      bold: true,
+    },
+    alignment: { horizontal: "center" },
+    border: BORDER,
+    fill: { fgColor: { rgb: color } },
+  };
+}
+
+/**
+ * Builds a worksheet object for one matrix/diff sheet.
+ */
+function buildWorksheet(sheet) {
+  const isDiff = sheet.diff === true;
+  const domainOf = (name) => sheet.nameDomain.get(name) || "";
+  const rowStateOf = (name) => (isDiff ? sheet.rowState.get(name) : "same");
+  const colStateOf = (name) => (isDiff ? sheet.colState.get(name) : "same");
+
+  const edgeStateOf = (source, target) => {
+    const key = source + "\u0000" + target;
+    if (isDiff) {
+      return sheet.edgeState.has(key) ? sheet.edgeState.get(key) : null;
+    }
+    return sheet.edges.has(key) ? "same" : null;
+  };
+
+  const colSeq = withSeparators(sheet.colNames, sheet.nameDomain);
+  const rowSeq = withSeparators(sheet.rowNames, sheet.nameDomain);
+  const totalCols = 2 + colSeq.length;
+  const grid = [];
+
+  /*  Legend row (diff sheets only), colored like the classic comatrix.  */
+  if (isDiff) {
+    const legendRow = [];
+    legendRow.push(cell("Grün = Hinzugefügt", legendStyle(COLOR_ADDED)));
+    legendRow.push(cell("Orange = geändert", legendStyle(COLOR_CHANGED)));
+    legendRow.push(cell("Rot = gelöscht", legendStyle(COLOR_REMOVED)));
+    for (let i = 3; i < totalCols; i++) {
+      legendRow.push(cell("", GRAY_STYLE));
+    }
+    grid.push(legendRow);
+  }
+
+  /*  Domain row: target element domains.  */
+  const domainRow = [];
+  domainRow.push(cell("", GRAY_STYLE));
+  domainRow.push(cell("", GRAY_STYLE));
+  colSeq.forEach((item) => {
+    domainRow.push(item.sep ? cell("", SEP_STYLE) : cell(domainOf(item.name), GRAY_STYLE));
+  });
+  grid.push(domainRow);
+
+  /*  Row 1: header with target element names.  */
+  const headerRow = [];
+  headerRow.push(cell("Domäne", GRAY_STYLE));
+  headerRow.push(cell("Quelle \\ Ziel", GRAY_STYLE));
+  colSeq.forEach((item) => {
+    headerRow.push(item.sep ? cell("", SEP_STYLE) : cell(item.name, headerNameStyle(colStateOf(item.name), true)));
+  });
+  grid.push(headerRow);
+
+  /*  Data rows.  */
+  rowSeq.forEach((rowItem) => {
+    const row = [];
+    if (rowItem.sep) {
+      const width = 2 + colSeq.length;
+      for (let i = 0; i < width; i++) {
+        row.push(cell("", SEP_STYLE));
+      }
+      grid.push(row);
+      return;
+    }
+
+    const rowName = rowItem.name;
+    row.push(cell(domainOf(rowName), GRAY_STYLE));
+    row.push(cell(rowName, headerNameStyle(rowStateOf(rowName), false)));
+
+    colSeq.forEach((colItem) => {
+      if (colItem.sep) {
+        row.push(cell("", SEP_STYLE));
+        return;
+      }
+      const state = edgeStateOf(rowName, colItem.name);
+      row.push(state ? cell("x", markStyle(state)) : cell("", markStyle(null)));
+    });
+    grid.push(row);
+  });
+
+  /*  Assemble worksheet from the cell grid.  */
+  const ws = {};
+  const numRows = grid.length;
+  const numCols = 2 + colSeq.length;
+  for (let r = 0; r < numRows; r++) {
+    for (let c = 0; c < numCols; c++) {
+      const ref = XLSX.utils.encode_cell({ r: r, c: c });
+      ws[ref] = grid[r][c];
+    }
+  }
+  ws["!ref"] = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: numRows - 1, c: numCols - 1 } });
+
+  const cols = [{ wch: 20 }, { wch: 32 }];
+  colSeq.forEach((item) => {
+    cols.push(item.sep ? { wch: 2 } : { wch: 4 });
+  });
+  ws["!cols"] = cols;
+
+  const ySplit = isDiff ? 3 : 2;
+  ws["!freeze"] = {
+    xSplit: 2,
+    ySplit: ySplit,
+    topLeftCell: XLSX.utils.encode_cell({ r: ySplit, c: 2 }),
+    activePane: "bottomRight",
+    state: "frozen",
+  };
+
+  return ws;
+}
+
+/**
+ * Sanitizes and de-duplicates an Excel worksheet name (<= 31 chars, no []:*?/\).
+ */
+function sheetNameFor(rawName, used) {
+  let name = (rawName || "Metamodell").replace(/[\[\]\:\*\?\/\\]/g, " ").trim();
+  if (name.length === 0) {
+    name = "Metamodell";
+  }
+  if (name.length > 31) {
+    name = name.substring(0, 31);
+  }
+
+  let candidate = name;
+  let counter = 2;
+  while (used.has(candidate)) {
+    const suffix = " (" + counter + ")";
+    candidate = name.substring(0, 31 - suffix.length) + suffix;
+    counter++;
+  }
+  used.add(candidate);
+  return candidate;
+}
+
+/**
+ * Writes all matrix/diff sheets to a single workbook file.
+ * @param {Array<Object>} sheets - Matrix or diff sheet models
+ * @param {String} outputPath - Destination .xlsx path
+ */
+function metaOutput2Excel(sheets, outputPath) {
+  const workbook = XLSX.utils.book_new();
+  const used = new Set();
+
+  sheets.forEach((sheet) => {
+    const ws = buildWorksheet(sheet);
+    XLSX.utils.book_append_sheet(workbook, ws, sheetNameFor(sheet.name, used));
+  });
+
+  const excelBuffer = XLSX.write(workbook, { type: "buffer", bookType: "xlsx", cellStyles: true });
+
+  const FileOutputStream = Java.type("java.io.FileOutputStream");
+  const fos = new FileOutputStream(outputPath, false);
+  const javaBytes = Java.to(Array.from(excelBuffer), "byte[]");
+  fos.write(javaBytes);
+  fos.close();
+}
+
+module.exports = metaOutput2Excel;
 
 
 /***/ },
@@ -3508,359 +3802,128 @@ module.exports = posix;
 /************************************************************************/
 var __webpack_exports__ = {};
 /**
- * comatrix.js
- * Entry point for webpack bundling - Excel export using SheetJS with styles
+ * metacomatrix.js
+ * Entry point: builds connectivity matrices routed by the meta-model relationship
+ * property Report:Model:Comatrix, with optional baseline diff. Bundled to
+ * metacomatrix-bundled.ajs.
  */
 
-const XLSX = __webpack_require__(402);
 const path = __webpack_require__(975);
-const output2Excel = __webpack_require__(218);
-const { findDomain, extractElements } = __webpack_require__(593);
 const { getParameter } = __webpack_require__(124);
-const { PROP_BASELINE } = __webpack_require__(93);
-const { isBlank } = __webpack_require__(821);
+const { buildComatrices, toMatrix, diffMatrix } = __webpack_require__(879);
+const { PROP_BASELINE, PROP_COMATRIX } = __webpack_require__(93);
+const { hasText } = __webpack_require__(821);
+const metaOutput2Excel = __webpack_require__(971);
 
 /**
- * Sorts elements by domain (empty domains last), then by element name
- * @param {Map} elementsMap - Map with element names as keys and objects with domain property as values
- * @returns {Array} Sorted array of element names
+ * Resolves the baseline model: --baselineModel path parameter, else the model
+ * property "baseline" naming a currently loaded model.
+ * @returns {Object|null} The baseline model or null
  */
-function sortElementsByDomain(elementsMap) {
-  return Array.from(elementsMap.keys()).sort((name1, name2) => {
-    const domain1 = elementsMap.get(name1).domain;
-    const domain2 = elementsMap.get(name2).domain;
-
-    // Empty domains go to the end
-    if (domain1 === "" && domain2 !== "") return 1;
-    if (domain1 !== "" && domain2 === "") return -1;
-
-    // Compare domains
-    if (domain1 !== domain2) {
-      return domain1.localeCompare(domain2);
-    }
-
-    // Same domain, sort by element name
-    return name1.localeCompare(name2);
-  });
-}
-
-/**
- * Builds a connectivity matrix from an Archi model
- * @param {Object} currentModel - The Archi model to analyze
- * @returns {Object} Matrix data structure with aElements, bElementsMap, sortedAElements, sortedBElements, and relationships
- */
-function buildComatrix(currentModel) {
-  console.log("Step 1: Analyzing relationships and building matrix...");
-
-  // Extract relationships from the model
-  const relationships = extractElements(currentModel);
-  console.log(`Found ${relationships.length} triggering relationships`);
-
-  // Collect all unique A elements (targets) and B elements (sources)
-  // Map structure: A element name -> {domain, schnittstellenMap}
-  const aElements = new Map();
-  const bElementsMap = new Map(); // Store B elements with their domains
-
-  relationships.forEach((rel) => {
-    const aName = rel.target.name;
-    const bName = rel.source.name;
-    const schnittstelle = rel.schnittstelle || "N/A";
-    const aDomain = rel.targetDomain;
-    const bDomain = rel.sourceDomain;
-
-    if (!aElements.has(aName)) {
-      aElements.set(aName, {
-        domain: aDomain,
-        schnittstellenMap: new Map(),
-      });
-    }
-
-    const aData = aElements.get(aName);
-    if (!aData.schnittstellenMap.has(schnittstelle)) {
-      aData.schnittstellenMap.set(schnittstelle, new Set());
-    }
-
-    aData.schnittstellenMap.get(schnittstelle).add(bName);
-
-    // Store B element with its domain
-    if (!bElementsMap.has(bName)) {
-      bElementsMap.set(bName, { domain: bDomain });
-    }
-  });
-
-  console.log(`Found ${aElements.size} target elements (A) and ${bElementsMap.size} source elements (B)`);
-  console.log("Step 2: Sorting elements...");
-
-  // Sort A elements by domain (empty domains last), then by element name
-  const sortedAElements = sortElementsByDomain(aElements);
-
-  // Sort B elements by domain (empty domains last), then by element name
-  const sortedBElements = sortElementsByDomain(bElementsMap);
-
-  console.log("Matrix data structure built successfully.");
-
-  return {
-    aElements,
-    bElementsMap,
-    sortedAElements,
-    sortedBElements,
-    relationships,
-  };
-}
-
-/**
- * Merges two connectivity matrices (baseline and current)
- * @param {Object} comatrixBase - Matrix data structure from buildComatrix(baselineModel)
- * @param {Object} comatrixCurrent - Matrix data structure from buildComatrix(currentModel)
- * @returns {Object} Merged matrix data structure containing all elements from both models
- */
-function merge(comatrixBase, comatrixCurrent) {
-  console.log("Merging baseline and current matrices...");
-
-  // Merge A elements
-  const aElements = new Map();
-
-  // Copy baseline A elements
-  comatrixBase.aElements.forEach((value, key) => {
-    aElements.set(key, {
-      domain: value.domain,
-      schnittstellenMap: new Map(value.schnittstellenMap),
-    });
-  });
-
-  // Merge current A elements
-  comatrixCurrent.aElements.forEach((value, key) => {
-    if (aElements.has(key)) {
-      // Element exists in both - merge Schnittstellen
-      const existingData = aElements.get(key);
-
-      // Update domain: use current if baseline is empty or differs
-      if (isBlank(existingData.domain) || existingData.domain !== value.domain) {
-        existingData.domain = value.domain;
+function resolveBaselineModel() {
+  const baselineModelPath = getParameter("baselineModel");
+  if (baselineModelPath) {
+    console.log(`Loading baseline model from parameter: "${baselineModelPath}"`);
+    try {
+      const loaded = $.model.load(baselineModelPath);
+      if (loaded) {
+        console.log(`✓ Baseline model loaded: ${loaded.name}`);
       }
-
-      value.schnittstellenMap.forEach((bSet, schnittstelle) => {
-        if (!existingData.schnittstellenMap.has(schnittstelle)) {
-          existingData.schnittstellenMap.set(schnittstelle, new Set(bSet));
-        } else {
-          // Merge B elements for this Schnittstelle
-          bSet.forEach((b) => existingData.schnittstellenMap.get(schnittstelle).add(b));
-        }
-      });
-    } else {
-      // New element from current
-      aElements.set(key, {
-        domain: value.domain,
-        schnittstellenMap: new Map(value.schnittstellenMap),
-      });
+      return loaded || null;
+    } catch (error) {
+      console.log(`✗ Error loading baseline model: ${error.message}`);
+      return null;
     }
-  });
+  }
 
-  // Merge B elements
-  const bElementsMap = new Map();
-
-  // Copy baseline B elements
-  comatrixBase.bElementsMap.forEach((data, name) => {
-    bElementsMap.set(name, { domain: data.domain });
-  });
-
-  // Add/update current B elements - prefer current domain if baseline is empty or differs
-  comatrixCurrent.bElementsMap.forEach((data, name) => {
-    if (bElementsMap.has(name)) {
-      const baselineData = bElementsMap.get(name);
-      // Use current domain if baseline is empty or differs
-      if (isBlank(baselineData.domain) || baselineData.domain !== data.domain) {
-        bElementsMap.set(name, { domain: data.domain });
-      }
+  const baselineProperty = model.prop(PROP_BASELINE);
+  if (hasText(baselineProperty)) {
+    console.log(`Looking for baseline model: "${baselineProperty}"`);
+    const baseline = $.model.getLoadedModels().find((m) => m.name === baselineProperty);
+    if (baseline) {
+      console.log(`✓ Baseline model found: ${baseline.name}`);
     } else {
-      bElementsMap.set(name, { domain: data.domain });
+      console.log(`✗ Baseline model "${baselineProperty}" is not opened.`);
     }
-  });
+    return baseline || null;
+  }
 
-  // Sort merged elements
-  const sortedAElements = sortElementsByDomain(aElements);
-
-  const sortedBElements = sortElementsByDomain(bElementsMap);
-
-  // Merge relationships
-  const relationships = [...comatrixBase.relationships, ...comatrixCurrent.relationships];
-
-  console.log(
-    `Merged matrix: ${aElements.size} A-elements, ${bElementsMap.size} B-elements, ${relationships.length} relationships`,
-  );
-
-  return {
-    aElements,
-    bElementsMap,
-    sortedAElements,
-    sortedBElements,
-    relationships,
-  };
+  return null;
 }
 
 /**
- * Main execution function
+ * Main execution.
  */
-function runComatrix() {
+function runMetaComatrix() {
   console.clear();
   console.show();
-  console.log("=== Comatrix - Generate Connectivity Matrix ===\n");
+  console.log("=== Meta-Comatrix - Meta-model driven Connectivity Matrix ===\n");
 
-  // Check if a model is selected
   if (!model) {
-    console.log("ERROR: No model is selected. Please open or create a model first.");
+    console.log("ERROR: No model is selected. Please open or select a model first.");
+    return;
+  }
+  console.log(`Selected model: ${model.name}`);
+
+  const baselineModel = resolveBaselineModel();
+  const compareMode = !!baselineModel;
+  console.log(compareMode ? "\nRunning in COMPARE MODE.\n" : "\nRunning in single model mode.\n");
+
+  console.log(`Building comatrices routed by ${PROP_COMATRIX}...`);
+  const currentComatrices = buildComatrices(model);
+  console.log(`Found ${currentComatrices.size} comatrix/comatrices in the current model.`);
+
+  if (currentComatrices.size === 0) {
+    console.log(`⚠ No routed relationships found. Tag meta-model relationships with the ${PROP_COMATRIX} property.`);
     return;
   }
 
-  console.log(`Selected model: ${model.name}`);
-  console.log(`Model path: ${model.path || "(not saved)"}\n`);
-
-  // List all loaded models
-  const loadedModels = $.model.getLoadedModels();
-  console.log(`Total loaded models: ${loadedModels.length}`);
-  loadedModels.forEach((m, index) => {
-    const marker = m === model ? "→" : " ";
-    console.log(`${marker} ${index + 1}. ${m.name}`);
-  });
-  console.log("");
-
-  // Check for baseline model
-  // Priority 1: Command line parameter --baselineModel
-  // Priority 2: Model property 'baseline'
-  const baselineModelPath = getParameter("baselineModel");
-  const baselineProperty = model.prop(PROP_BASELINE);
-  let baselineModel = null;
-  let compareMode = false;
-
-  if (baselineModelPath) {
-    // Parameter provided - load model from path
-    console.log(`Loading baseline model from parameter: "${baselineModelPath}"`);
-
-    try {
-      baselineModel = $.model.load(baselineModelPath);
-      if (baselineModel) {
-        console.log(`✓ Baseline model loaded: ${baselineModel.name}`);
-        console.log(`  Baseline path: ${baselineModelPath}`);
-        console.log("Running in COMPARE MODE (parameter-based).\n");
-        compareMode = true;
-      } else {
-        console.log(`✗ Failed to load baseline model from: ${baselineModelPath}`);
-        console.log("Running in single model mode.\n");
-      }
-    } catch (error) {
-      console.log(`✗ Error loading baseline model: ${error.message}`);
-      console.log("Running in single model mode.\n");
-    }
-  } else if (isBlank(baselineProperty)) {
-    console.log("ℹ No --baselineModel parameter provided.");
-    console.log("ℹ Property 'baseline' is not set in the selected model.");
-    console.log("Running in single model mode.\n");
-  } else {
-    console.log(`Looking for baseline model: "${baselineProperty}"`);
-
-    // Search for baseline model among loaded models
-    baselineModel = loadedModels.find((m) => m.name === baselineProperty);
-
-    if (baselineModel) {
-      console.log(`✓ Baseline model found: ${baselineModel.name}`);
-      console.log(`  Baseline path: ${baselineModel.path || "(not saved)"}`);
-      console.log("Running in COMPARE MODE (property-based).\n");
-      compareMode = true;
-    } else {
-      console.log(`✗ Baseline model "${baselineProperty}" is not opened.`);
-      console.log("Running in single model mode.\n");
-    }
+  const baselineComatrices = compareMode ? buildComatrices(baselineModel) : new Map();
+  if (compareMode) {
+    console.log(`Found ${baselineComatrices.size} comatrix/comatrices in the baseline model.`);
   }
 
-  // Extract all triggering relationships from the selected model
-  console.log("Extracting triggering relationships starting with NST_...");
-  const elements = extractElements(model);
-  console.log(`Found ${elements.length} triggering relationships`);
+  const sheets = [];
+  currentComatrices.forEach((comatrix, comatrixId) => {
+    const currentMatrix = toMatrix(comatrix);
+    console.log(
+      `  Comatrix "${comatrix.name}" (${comatrix.kind}): ${currentMatrix.rowNames.length} source(s) x ${currentMatrix.colNames.length} target(s), ${currentMatrix.edges.size} relationship(s).`,
+    );
 
-  // Print domain information for verification
-  console.log("\n=== Domain Information ===");
-  const uniqueElements = new Map();
-
-  elements.forEach((rel) => {
-    if (!uniqueElements.has(rel.source.name)) {
-      uniqueElements.set(rel.source.name, rel.sourceDomain);
-    }
-    if (!uniqueElements.has(rel.target.name)) {
-      uniqueElements.set(rel.target.name, rel.targetDomain);
+    if (compareMode && baselineComatrices.has(comatrixId)) {
+      const baselineMatrix = toMatrix(baselineComatrices.get(comatrixId));
+      sheets.push(diffMatrix(currentMatrix, baselineMatrix));
+      console.log(`    Diffed against baseline comatrix "${baselineMatrix.name}".`);
+    } else {
+      sheets.push(currentMatrix);
     }
   });
 
-  console.log(`Total unique elements: ${uniqueElements.size}\n`);
-
-  // Define output path
-  // Normalize path to use forward slashes (path-browserify only handles POSIX paths)
   const normalizedPath = model.path ? model.path.replace(/\\/g, "/") : null;
   const outputDir = normalizedPath ? path.dirname(normalizedPath) : __DIR__;
-  const outputPath = path.join(outputDir, "comatrix.xlsm");
+  const outputPath = path.join(outputDir, "comatrix-metamodel.xlsx");
 
-  console.log(`Output file: ${outputPath}\n`);
-
-  // Generate Excel file
-  console.log("Generating Excel file...");
-
+  console.log(`\nWriting ${sheets.length} worksheet(s) to: ${outputPath}`);
   try {
-    let comatrix;
-    let comatrixBase = null;
-    let comatrixCurrent = null;
-
-    if (compareMode) {
-      // Build matrices for both models
-      console.log("Building matrix for baseline model...");
-      comatrixBase = buildComatrix(baselineModel);
-      console.log(`Baseline: ${comatrixBase.relationships.length} relationships\n`);
-
-      console.log("Building matrix for current model...");
-      comatrixCurrent = buildComatrix(model);
-      console.log(`Current: ${comatrixCurrent.relationships.length} relationships\n`);
-
-      if (comatrixCurrent.relationships.length === 0) {
-        console.log("⚠ No NST_* triggering relationships found in the current model.");
-        return;
-      }
-
-      // Merge baseline and current
-      comatrix = merge(comatrixBase, comatrixCurrent);
-      console.log("");
-    } else {
-      // Single model mode - just build from current model
-      comatrix = buildComatrix(model);
-
-      if (comatrix.relationships.length === 0) {
-        console.log("⚠ No NST_* triggering relationships found in the selected model.");
-        return;
-      }
-    }
-
-    // Output to Excel with optional baseline comparison
-    output2Excel(comatrix, outputPath, comatrixBase, comatrixCurrent);
-
-    console.log("\n=== Export Complete ===");
+    metaOutput2Excel(sheets, outputPath);
+    console.log("=== Export Complete ===");
     console.log(`Matrix file saved to: ${outputPath}`);
-    console.log(`Total triggering relationships processed: ${comatrix.relationships.length}`);
 
-    // Open the file location in file browser
     try {
       java.awt.Desktop.getDesktop().open(new java.io.File(outputDir));
-    } catch (e) {
+    } catch (openError) {
       console.log("Could not open file browser automatically.");
     }
   } catch (error) {
     console.log(`\n✗ ERROR: Failed to create Excel file`);
     console.log(`Error message: ${error.message}`);
-    console.log(`Error type: ${error.constructor.name}`);
     if (error.stack) {
       console.log(`Stack trace:\n${error.stack}`);
     }
   }
 }
 
-// Execute the main function when script is loaded
-runComatrix();
+runMetaComatrix();
 
 /******/ })()
 ;
